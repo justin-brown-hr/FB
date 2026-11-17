@@ -5,7 +5,10 @@
   "description": "Adds 'Copy project' and 'Write bid' buttons to Freelancer.com project pages. Write bid asks B1 (Claude) and fills your proposal.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0dJCUIRri7Lf5+31a3ZiFY+TlZ6LfQUp0Ht6zd9BIfzxPQhQZZ5MWh/HF4HHNMb8BxGRiKViJ9ZgDAkmc33fOSUCp4XazWEdN55MWoAxBW4oKKlLrct7tmiQgIVeciEFMrDD9XnsQ92YT3vzdPnx9BSjGNuKQAIaA9r8x+pRxwBlxMF5MYR2jrSMHjkp+JhAKXQkex6EuUCKl+H6mJmrR47c+aPR0CX/xYyyMoFC0mH5wpDYz9GcYZZ8bN6hfuJ2jfk/BSq/p7bg5nobBklcnCne0iYklBwfmglIE6BIwW+QyNQbRG0qNPij190m23cd03f18/IZl5XL3dSpf/kO6QIDAQAB",
   "permissions": [
-    "clipboardWrite"
+    "activeTab",
+    "clipboardWrite",
+    "management",
+    "scripting"
   ],
   "background": {
     "service_worker": "background.js"
@@ -14,6 +17,41 @@
     {
       "matches": [
         "https://www.freelancer.com/*",
+        "https://www.freelancer.in/*",
+        "https://www.freelancer.co.uk/*",
+        "https://www.freelancer.ca/*",
+        "https://www.freelancer.com.au/*",
+        "https://www.freelancer.co.nz/*",
+        "https://www.freelancer.ie/*",
+        "https://www.freelancer.pk/*",
+        "https://www.freelancer.ph/*",
+        "https://www.freelancer.hk/*",
+        "https://www.freelancer.sg/*",
+        "https://www.freelancer.my/*",
+        "https://www.freelancer.co.id/*",
+        "https://www.freelancer.com.bd/*",
+        "https://www.freelancer.co.za/*",
+        "https://www.freelancer.com.ng/*",
+        "https://www.freelancer.co.ke/*",
+        "https://www.freelancer.ae/*",
+        "https://www.freelancer.de/*",
+        "https://www.freelancer.fr/*",
+        "https://www.freelancer.es/*",
+        "https://www.freelancer.it/*",
+        "https://www.freelancer.nl/*",
+        "https://www.freelancer.pt/*",
+        "https://www.freelancer.se/*",
+        "https://www.freelancer.pl/*",
+        "https://www.freelancer.ro/*",
+        "https://www.freelancer.mx/*",
+        "https://www.freelancer.cl/*",
+        "https://www.freelancer.com.ar/*",
+        "https://www.freelancer.com.pe/*",
+        "https://www.freelancer.com.jm/*",
+        "https://www.freelancer.ec/*",
+        "https://www.freelancer.hn/*",
+        "https://www.freelancer.uy/*",
+        "https://www.freelancer.jp/*",
         "https://freelancer.com/*"
       ],
       "js": [
@@ -39,6 +77,7 @@
       "48": "icons/icon48.png",
       "128": "icons/icon128.png"
     },
-    "default_title": "Bid Assistant B2 (Freelancer)"
+    "default_title": "Bid Assistant B2 (Freelancer)",
+    "default_popup": "popup.html"
   }
 }

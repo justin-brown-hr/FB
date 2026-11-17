@@ -38,9 +38,8 @@ Timelines in hours, weeks or months are converted to days (3 weeks becomes 21).
 
 1. Open `chrome://extensions` (or `edge://extensions`) and turn on **Developer mode**.
 2. Click **Load unpacked** and select `b1-claude/`. Do the same for `b2-freelancer/`.
-3. Check the IDs. Each extension has a fixed ID set by the `key` in its manifest, and the two use these IDs to find each other:
-   - B1: `healnpcjminpoeiichodknaejnbjojmp`
-   - B2: `nlejmfpbabcofjkfpdinpkccflhbofjf`
+3. B2 finds B1 by its name, so the extension IDs don't matter. Chrome will say both can "manage your apps, extensions and themes". They need that only to find each other.
+4. Click the **B2** toolbar icon and then **Check setup** to confirm everything is connected.
 
 ## Set up B1
 
@@ -57,6 +56,12 @@ Keep a claude.ai tab open (or let B1 open one). B1 sends the message as you, in 
 ## Use
 
 Open a project page on freelancer.com and click **Write bid**. The status bubble shows progress. After about 10–60 s the proposal box is filled and outlined in green.
+
+## Troubleshooting
+
+- **Nothing appears on `chrome://extensions` after Load unpacked:** Chrome was started with `--disable-extensions`. Check `chrome://version` → Command Line, then restart Chrome without that flag.
+- **The B2 status bubble shows an error:** click B2's icon, then **Check setup**. It tells you which part is missing: B1 off or not installed, not logged in to claude.ai, or no chat named BID.
+- **Buttons missing on a Freelancer page:** refresh the page after installing or reloading the extensions. Regional sites such as freelancer.in and freelancer.co.uk are supported.
 
 ## Notes
 

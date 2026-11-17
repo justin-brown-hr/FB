@@ -61,9 +61,12 @@
     return text;
   }
 
+  const isLoggedOut = () => /^\/(login|logout|signup)/.test(location.pathname);
+
   function state() {
     const msgs = assistantMessages();
     return {
+      loggedOut: isLoggedOut(),
       hasInput: !!findInput(),
       streaming: isStreaming(),
       msgCount: msgs.length,
@@ -123,12 +126,27 @@
     el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true }));
   }
 
-  function findChatLink(name) {
+  async function findChatLink(name) {
     const want = name.trim().toLowerCase();
+    // 1) sidebar link (only present when the sidebar is open)
     const links = Array.from(document.querySelectorAll('a[href*="/chat/"]'));
     const link = links.find((a) => a.innerText.trim().toLowerCase() === want) ||
                  links.find((a) => a.innerText.trim().toLowerCase().startsWith(want + ' '));
-    return link ? link.href : null;
+    if (link) return link.href;
+    // 2) claude.ai's own chat list (works with the sidebar collapsed or on a small window)
+    try {
+      const orgs = await (await fetch('/api/organizations', { credentials: 'include' })).json();
+      for (const org of Array.isArray(orgs) ? orgs : []) {
+        const res = await fetch(`/api/organizations/${org.uuid}/chat_conversations?limit=500`, { credentials: 'include' });
+        if (!res.ok) continue;
+        const convs = await res.json();
+        const list = Array.isArray(convs) ? convs : (convs.data || convs.conversations || []);
+        const hit = list.find((c) => (c.name || '').trim().toLowerCase() === want && c.is_starred) ||
+                    list.find((c) => (c.name || '').trim().toLowerCase() === want);
+        if (hit?.uuid) return `${location.origin}/chat/${hit.uuid}`;
+      }
+    } catch (_) {}
+    return null;
   }
 
   // Small badge so you can see B1 is active on claude.ai (click to hide it).
@@ -146,13 +164,16 @@
     b.style.background = color;
   }
   const ready = () => badge('B1 ready', '#2e7d4f');
-  ready();
+  if (!isLoggedOut()) ready();
 
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     switch (msg?.type) {
       case 'PING': sendResponse({ ok: true, url: location.href }); return;
       case 'STATE': sendResponse(state()); return;
-      case 'FIND_CHAT_LINK': sendResponse({ href: findChatLink(msg.name || 'BID') }); return;
+      case 'FIND_CHAT_LINK':
+        if (isLoggedOut()) { sendResponse({ loggedOut: true }); return; }
+        findChatLink(msg.name || 'BID').then((href) => sendResponse({ href }), () => sendResponse({ href: null }));
+        return true; // async
       case 'SEND':
         badge('B1: writing bid…', '#d97757');
         setTimeout(() => document.getElementById('fba-b1-badge') && ready(), 120000);
