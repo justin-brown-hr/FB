@@ -12,7 +12,7 @@
   .row { display: flex; gap: 8px; align-items: center; margin-top: 10px; }
   button { padding: 7px 12px; border: 0; border-radius: 6px; cursor: pointer; background: #2f80ed; color: #fff; font-weight: 600; }
   button.sec { background: #3a3f4a; }
-  #msg { color: #6fcf97; font-size: 12px; min-height: 16px; margin-top: 8px; }
+  #msg { color: #6fcf97; white-space: pre-wrap; font-size: 12px; min-height: 16px; margin-top: 8px; }
 </style>
 </head>
 <body>
@@ -35,7 +35,14 @@
 
   <div class="row"><input id="focusTab" type="checkbox"><span>Switch to the Claude tab while writing</span></div>
 
-  <div class="row"><button id="save">Save</button></div>
+  <h1 style="margin-top:16px">Remote mode (B2 on another PC)</h1>
+  <label for="relayUrl">Relay URL</label>
+  <input id="relayUrl" type="text" placeholder="http://127.0.0.1:8787">
+  <label for="relayToken">Relay token</label>
+  <input id="relayToken" type="text" placeholder="same token as the relay server">
+  <div class="hint">Leave empty if B2 is installed in this same Chrome.</div>
+
+  <div class="row"><button id="save">Save</button><button id="test" class="sec">Test relay</button></div>
   <div id="msg"></div>
   <script src="popup.js"></script>
 </body>

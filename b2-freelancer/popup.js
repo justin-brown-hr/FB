@@ -1,3 +1,12 @@
+const $ = (id) => document.getElementById(id);
+chrome.storage.sync.get({ relayUrl: '', relayToken: '' }).then((s) => { $('relayUrl').value = s.relayUrl; $('relayToken').value = s.relayToken; });
+$('save').onclick = async () => {
+  const url = $('relayUrl').value.trim();
+  if (url && !/^https?:\/\//.test(url)) { $('out').textContent = '✗ Relay URL must start with http:// or https://'; return; }
+  await chrome.storage.sync.set({ relayUrl: url, relayToken: $('relayToken').value.trim() });
+  $('out').textContent = 'Saved ✓ — click Check setup to test it.';
+};
+
 const out = document.getElementById('out');
 const add = (line) => { out.textContent += line + '\n'; };
 
@@ -25,7 +34,7 @@ document.getElementById('check').onclick = async () => {
   const timer = setTimeout(() => { if (!answered) { add('✗ B1 did not answer — is "Bid Assistant B1 (Claude)" installed and enabled?'); port.disconnect(); } }, 15000);
   port.onMessage.addListener((m) => {
     if (m.type === 'DIAG') { answered = true; clearTimeout(timer); out.textContent = out.textContent.replace('… checking B1\n', ''); m.lines.forEach(add); add(m.ok ? '\nAll good ✓' : ''); port.disconnect(); }
-    if (m.type === 'ERROR') { answered = true; clearTimeout(timer); add('✗ ' + m.error); }
+    if (m.type === 'ERROR') { answered = true; clearTimeout(timer); out.textContent = out.textContent.replace('… checking B1\n', ''); add('✗ ' + m.error); }
   });
   port.postMessage({ type: 'DIAG' });
 };

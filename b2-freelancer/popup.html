@@ -7,7 +7,12 @@
   h1 { font-size: 15px; margin: 0 0 10px; }
   button { padding: 7px 12px; border: 0; border-radius: 6px; cursor: pointer; background: #139ff0; color: #fff; font-weight: 600; }
   #out { margin-top: 10px; white-space: pre-wrap; word-break: break-word; line-height: 1.5; }
-  .hint { color: #9aa0aa; font-size: 11px; margin-top: 10px; }
+  .hint { color: #9aa0aa; font-size: 11px; margin-top: 6px; }
+  label { display: block; margin: 10px 0 4px; font-weight: 600; }
+  input { width: 100%; box-sizing: border-box; padding: 6px 8px; border: 1px solid #444; border-radius: 6px; background: #2a2e37; color: #e6e6e6; font: inherit; }
+  .row { display: flex; gap: 8px; margin-top: 10px; }
+  button.sec { background: #3a3f4a; }
+  h2 { font-size: 13px; margin: 16px 0 0; }
 </style>
 </head>
 <body>
@@ -15,6 +20,14 @@
   <button id="check">Check setup</button>
   <div id="out"></div>
   <div class="hint">Checks this tab, the connection to B1, and the claude.ai login / BID chat.</div>
+
+  <h2>Remote B1 (on a VPS / other PC)</h2>
+  <label for="relayUrl">Relay URL</label>
+  <input id="relayUrl" type="text" placeholder="http://YOUR-VPS-IP:8787">
+  <label for="relayToken">Relay token</label>
+  <input id="relayToken" type="text" placeholder="token printed by the relay server">
+  <div class="hint">Leave both empty if B1 is installed in this same Chrome.</div>
+  <div class="row"><button id="save" class="sec">Save</button></div>
   <script src="popup.js"></script>
 </body>
 </html>

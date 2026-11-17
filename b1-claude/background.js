@@ -8,7 +8,9 @@ const DEFAULTS = {
   chatName: 'BID',        // used to find the chat if chatUrl is empty
   promptTemplate: '{project}',
   focusTab: false,
-  timeoutSec: 240
+  timeoutSec: 240,
+  relayUrl: '',           // e.g. http://127.0.0.1:8787 when the relay runs on this VPS
+  relayToken: ''
 };
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -216,3 +218,77 @@ async function diagnose() {
     return { ok: false, lines };
   }
 }
+
+// ---------- remote mode: take jobs from the relay server ----------
+// B2 (on another PC) posts jobs to the relay; we long-poll /api/next, run them, post the result.
+
+let relayLoopRunning = false;
+let relayLastError = '';
+
+const relayBase = (u) => (u || '').trim().replace(/\/+$/, '');
+
+async function relayFetch(settings, path, opts = {}) {
+  return fetch(relayBase(settings.relayUrl) + path, {
+    ...opts,
+    headers: { Authorization: 'Bearer ' + settings.relayToken.trim(), 'Content-Type': 'application/json', ...(opts.headers || {}) }
+  });
+}
+
+async function relayLoop() {
+  if (relayLoopRunning) return;
+  relayLoopRunning = true;
+  try {
+    while (true) {
+      const settings = await getSettings();
+      if (!settings.relayUrl || !settings.relayToken) break;
+      let res;
+      try {
+        res = await relayFetch(settings, '/api/next');
+      } catch (e) {
+        relayLastError = 'Cannot reach relay: ' + (e?.message || e);
+        await sleep(5000);
+        continue;
+      }
+      if (res.status === 401) { relayLastError = 'Relay says the token is wrong'; await sleep(15000); continue; }
+      if (res.status === 204) { relayLastError = ''; continue; }
+      if (!res.ok) { relayLastError = 'Relay error ' + res.status; await sleep(5000); continue; }
+      relayLastError = '';
+      const job = await res.json();
+      const post = (kind, body) => relayFetch(settings, `/api/jobs/${job.id}/${kind}`, { method: 'POST', body: JSON.stringify(body) }).catch(() => {});
+      await new Promise((done) => {
+        queue = queue.then(() => generate(job.text, (st) => post('status', { status: st }))
+          .then((bid) => post('result', { bid }))
+          .catch((e) => post('result', { error: String(e?.message || e) }))
+          .finally(done));
+      });
+    }
+  } finally {
+    relayLoopRunning = false;
+  }
+}
+
+// The service worker can be stopped by Chrome; the alarm restarts the loop every 30 s.
+chrome.alarms.create('relay', { periodInMinutes: 0.5 });
+chrome.alarms.onAlarm.addListener((a) => { if (a.name === 'relay') relayLoop(); });
+chrome.runtime.onStartup.addListener(relayLoop);
+chrome.runtime.onInstalled.addListener(relayLoop);
+chrome.storage.onChanged.addListener((c) => { if (c.relayUrl || c.relayToken) relayLoop(); });
+relayLoop();
+
+// popup "Test relay" button
+chrome.runtime.onMessage.addListener((msg, _s, sendResponse) => {
+  if (msg?.type !== 'RELAY_STATUS') return;
+  (async () => {
+    const settings = await getSettings();
+    if (!settings.relayUrl) return sendResponse({ text: 'Relay not set (B1 only takes requests from B2 in this same Chrome).' });
+    try {
+      const r = await relayFetch(settings, '/api/health');
+      if (r.status === 401) return sendResponse({ text: '✗ Relay reachable, but the token is wrong.' });
+      const h = await r.json();
+      sendResponse({ text: `✓ Relay reachable. B1 polling: ${relayLoopRunning ? 'yes' : 'no'}${relayLastError ? ' — ' + relayLastError : ''}` });
+    } catch (e) {
+      sendResponse({ text: '✗ Cannot reach relay: ' + (e?.message || e) });
+    }
+  })();
+  return true;
+});

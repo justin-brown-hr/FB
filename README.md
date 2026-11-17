@@ -57,6 +57,38 @@ Keep a claude.ai tab open (or let B1 open one). B1 sends the message as you, in 
 
 Open a project page on freelancer.com and click **Write bid**. The status bubble shows progress. After about 10–60 s the proposal box is filled and outlined in green.
 
+## Remote mode: B1 on a VPS, B2 on your PC
+
+If B1 and B2 are in different Chromes, they talk through a small relay server on the VPS (`relay/server.js`, Node 18+, no packages to install):
+
+```
+your PC: B2 ──HTTP──▶ relay on the VPS :8787 ◀──HTTP── B1 in Chrome on the VPS ──▶ claude.ai BID chat
+```
+
+B2 posts the project as a job. B1 long-polls the relay, picks up the job, writes the bid in Claude and posts the result back. B2 picks up the result and fills the form. Every request needs the relay's secret token.
+
+### On the VPS
+
+1. Start the relay:
+   ```bash
+   cd FB/relay
+   RELAY_TOKEN=pick-a-long-random-secret node server.js
+   ```
+   To keep it running after you log out and start it on reboot, edit and install `relay/bid-relay.service` (instructions are inside the file).
+2. Open the port: `sudo ufw allow 8787/tcp`, and the cloud provider's firewall or security group if it has one.
+3. In the VPS Chrome (logged in to claude.ai, started **without** `--disable-extensions`): click the B1 icon and set
+   **Relay URL** `http://127.0.0.1:8787` and **Relay token** to your secret. Click **Save**, then **Test relay**.
+   Chrome with the claude.ai tab must stay running on the VPS, e.g. in your remote desktop or VNC session.
+
+### On your PC
+
+Click the B2 icon and set **Relay URL** `http://YOUR-VPS-IP:8787` and the same **Relay token**. Click **Save**, then **Check setup**. It should end with "All good ✓".
+
+To go back to same-Chrome mode, clear both relay fields.
+
+**Security:** with `http://`, the token and project text travel unencrypted. If you have a domain, put HTTPS in front of the relay, for example with Caddy:
+`caddy reverse-proxy --from bids.example.com --to 127.0.0.1:8787`. Start the relay with `HOST=127.0.0.1` so port 8787 isn't open to the internet, and use `https://bids.example.com` as the relay URL in B2.
+
 ## Troubleshooting
 
 - **Nothing appears on `chrome://extensions` after Load unpacked:** Chrome was started with `--disable-extensions`. Check `chrome://version` → Command Line, then restart Chrome without that flag.
