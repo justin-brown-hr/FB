@@ -10,7 +10,7 @@ async function findB1() {
     const on = b1s.find((e) => e.enabled);
     if (on) return { id: on.id };
     if (b1s.length) return { error: 'B1 (Claude extension) is installed but turned off. Enable it in chrome://extensions.' };
-    return { error: 'B1 (Claude extension) is not in this Chrome. If B1 runs on a VPS / other PC, set the relay URL and token in the B2 popup (click the B2 icon).' };
+    return { error: 'B1 (Claude extension) is not in this Chrome. If B1 runs on a VPS / other PC, paste the pairing code in the B2 popup (click the B2 icon).' };
   } catch (_) {
     return { id: B1_FIXED_ID };
   }
@@ -32,7 +32,7 @@ async function relayJson(relay, path, opts) {
   let res;
   try { res = await relayFetch(relay, path, opts); }
   catch (e) { throw new Error(`Cannot reach the relay at ${relay.relayUrl} (${e?.message || e}). Is the relay server running and the port open?`); }
-  if (res.status === 401) throw new Error('The relay token is wrong. Check it in the B2 popup.');
+  if (res.status === 401) throw new Error('The pairing code is wrong (token mismatch). Paste it again in the B2 popup.');
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(body.error || 'Relay error ' + res.status);
   return body;
@@ -52,7 +52,7 @@ function remoteSession(pagePort, relay) {
         const h = await relayJson(relay, '/api/health');
         lines.push('✓ Relay reachable, token OK');
         if (h.b1Online) { lines.push('✓ B1 on the VPS is connected to the relay'); ok = true; }
-        else lines.push('✗ B1 is not connected to the relay. On the VPS: Chrome must be running with B1, and the B1 popup needs the relay URL + token.');
+        else lines.push('✗ B1 is not connected to the relay. On the VPS: Chrome must be running with B1, with the pairing code saved in the B1 popup.');
       } catch (e) { lines.push('✗ ' + e.message); }
       post({ type: 'DIAG', ok, lines });
       return;

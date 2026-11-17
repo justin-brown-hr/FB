@@ -1,10 +1,22 @@
 const $ = (id) => document.getElementById(id);
-chrome.storage.sync.get({ relayUrl: '', relayToken: '' }).then((s) => { $('relayUrl').value = s.relayUrl; $('relayToken').value = s.relayToken; });
+
+// "1.2.3.4:8787/TOKEN" or "https://host/TOKEN"  ->  { relayUrl, relayToken }
+function parseCode(code) {
+  code = code.trim();
+  if (!code) return { relayUrl: '', relayToken: '' };
+  const m = code.match(/^(https?:\/\/)?([^/\s]+)\/([A-Za-z0-9_-]{8,})\/?$/);
+  if (!m) return null;
+  return { relayUrl: (m[1] || 'http://') + m[2], relayToken: m[3] };
+}
+const toCode = (s) => (s.relayUrl && s.relayToken ? `${s.relayUrl.replace(/^http:\/\//, '')}/${s.relayToken}` : '');
+
+chrome.storage.sync.get({ relayUrl: '', relayToken: '' }).then((s) => { $('code').value = toCode(s); });
+
 $('save').onclick = async () => {
-  const url = $('relayUrl').value.trim();
-  if (url && !/^https?:\/\//.test(url)) { $('out').textContent = '✗ Relay URL must start with http:// or https://'; return; }
-  await chrome.storage.sync.set({ relayUrl: url, relayToken: $('relayToken').value.trim() });
-  $('out').textContent = 'Saved ✓ — click Check setup to test it.';
+  const relay = parseCode($('code').value);
+  if (!relay) { $('out').textContent = '✗ That pairing code looks wrong. It should look like 1.2.3.4:8787/abc123…'; return; }
+  await chrome.storage.sync.set(relay);
+  $('check').click();
 };
 
 const out = document.getElementById('out');

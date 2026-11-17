@@ -3,47 +3,49 @@
 <head>
 <meta charset="utf-8">
 <style>
-  body { font: 13px system-ui, sans-serif; width: 340px; margin: 0; padding: 14px; background: #1f2229; color: #e6e6e6; }
-  h1 { font-size: 15px; margin: 0 0 10px; }
+  body { font: 13px system-ui, sans-serif; width: 330px; margin: 0; padding: 14px; background: #1f2229; color: #e6e6e6; }
+  h1 { font-size: 15px; margin: 0 0 12px; }
   label { display: block; margin: 10px 0 4px; font-weight: 600; }
-  input[type=text], input[type=number], textarea { width: 100%; box-sizing: border-box; padding: 6px 8px; border: 1px solid #444; border-radius: 6px; background: #2a2e37; color: #e6e6e6; font: inherit; }
-  textarea { height: 70px; resize: vertical; }
-  .hint { color: #9aa0aa; font-size: 11px; margin-top: 3px; }
+  input[type=text], input[type=number], textarea { width: 100%; box-sizing: border-box; padding: 7px 8px; border: 1px solid #444; border-radius: 6px; background: #2a2e37; color: #e6e6e6; font: inherit; }
+  textarea { height: 60px; resize: vertical; }
+  .hint { color: #9aa0aa; font-size: 11px; margin-top: 4px; }
   .row { display: flex; gap: 8px; align-items: center; margin-top: 10px; }
-  button { padding: 7px 12px; border: 0; border-radius: 6px; cursor: pointer; background: #2f80ed; color: #fff; font-weight: 600; }
+  button { padding: 7px 12px; border: 0; border-radius: 6px; cursor: pointer; background: #d97757; color: #fff; font-weight: 600; }
   button.sec { background: #3a3f4a; }
-  #msg { color: #6fcf97; white-space: pre-wrap; font-size: 12px; min-height: 16px; margin-top: 8px; }
+  details { margin-top: 14px; border-top: 1px solid #333; padding-top: 8px; }
+  summary { cursor: pointer; color: #9aa0aa; }
+  #msg { font-size: 12px; min-height: 16px; margin-top: 10px; white-space: pre-wrap; }
 </style>
 </head>
 <body>
   <h1>Bid Assistant B1 (Claude)</h1>
 
-  <label for="chatUrl">BID chat URL</label>
-  <input id="chatUrl" type="text" placeholder="https://claude.ai/chat/...">
-  <div class="row"><button id="useCurrent" class="sec">Use current tab</button></div>
-  <div class="hint">Open your pinned BID chat and click "Use current tab". If empty, B1 looks for a sidebar chat with the name below.</div>
+  <label for="code">Pairing code</label>
+  <input id="code" type="text" placeholder="1.2.3.4:8787/abc123…">
+  <div class="hint">Only needed when B2 is on another PC. Paste the code printed by <code>setup.sh</code>.</div>
 
-  <label for="chatName">Chat name (fallback)</label>
-  <input id="chatName" type="text">
-
-  <label for="promptTemplate">Message template</label>
-  <textarea id="promptTemplate"></textarea>
-  <div class="hint"><code>{project}</code> is replaced with the project details.</div>
-
-  <label for="timeoutSec">Timeout (seconds)</label>
-  <input id="timeoutSec" type="number" min="30" max="900">
-
-  <div class="row"><input id="focusTab" type="checkbox"><span>Switch to the Claude tab while writing</span></div>
-
-  <h1 style="margin-top:16px">Remote mode (B2 on another PC)</h1>
-  <label for="relayUrl">Relay URL</label>
-  <input id="relayUrl" type="text" placeholder="http://127.0.0.1:8787">
-  <label for="relayToken">Relay token</label>
-  <input id="relayToken" type="text" placeholder="same token as the relay server">
-  <div class="hint">Leave empty if B2 is installed in this same Chrome.</div>
-
-  <div class="row"><button id="save">Save</button><button id="test" class="sec">Test relay</button></div>
+  <div class="row"><button id="save">Save</button><button id="test" class="sec">Test</button></div>
   <div id="msg"></div>
+
+  <details>
+    <summary>Advanced</summary>
+    <label for="chatUrl">BID chat link</label>
+    <input id="chatUrl" type="text" placeholder="found automatically">
+    <div class="row"><button id="useCurrent" class="sec">Use current tab</button></div>
+    <div class="hint">Leave empty: B1 finds your chat named <b id="nameHint">BID</b> by itself.</div>
+
+    <label for="chatName">Chat name</label>
+    <input id="chatName" type="text">
+
+    <label for="promptTemplate">Message template</label>
+    <textarea id="promptTemplate"></textarea>
+    <div class="hint"><code>{project}</code> is replaced with the project details.</div>
+
+    <label for="timeoutSec">Timeout (seconds)</label>
+    <input id="timeoutSec" type="number" min="30" max="900">
+
+    <div class="row"><input id="focusTab" type="checkbox"><span>Switch to the Claude tab while writing</span></div>
+  </details>
   <script src="popup.js"></script>
 </body>
 </html>

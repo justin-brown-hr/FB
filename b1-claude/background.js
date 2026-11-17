@@ -280,7 +280,7 @@ chrome.runtime.onMessage.addListener((msg, _s, sendResponse) => {
   if (msg?.type !== 'RELAY_STATUS') return;
   (async () => {
     const settings = await getSettings();
-    if (!settings.relayUrl) return sendResponse({ text: 'Relay not set (B1 only takes requests from B2 in this same Chrome).' });
+    if (!settings.relayUrl) return sendResponse({ text: 'No pairing code saved (fine if B2 is in this same Chrome).' });
     try {
       const r = await relayFetch(settings, '/api/health');
       if (r.status === 401) return sendResponse({ text: '✗ Relay reachable, but the token is wrong.' });

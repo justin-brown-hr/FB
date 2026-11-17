@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Bid Assistant relay: lets B2 (your PC) talk to B1 (Chrome on the VPS) over HTTP.
-// No dependencies. Run:  RELAY_TOKEN=yoursecret PORT=8787 node server.js
+// No dependencies. Easiest: sudo bash setup.sh   (or: node server.js — token is created in token.txt)
 //
 // Protocol (all requests need "Authorization: Bearer <token>", JSON bodies):
 //   B2  POST /api/jobs                {text}            -> {id}
@@ -64,7 +64,7 @@ function nextJob() {
 setInterval(() => {
   const t = now();
   for (const j of jobs.values()) {
-    if (j.state === 'queued' && t - j.created > PICKUP_TIMEOUT_MS) fail(j, 'B1 did not pick up the job. Is Chrome with B1 running on the VPS, with the relay URL and token set in the B1 popup?');
+    if (j.state === 'queued' && t - j.created > PICKUP_TIMEOUT_MS) fail(j, 'B1 did not pick up the job. Is Chrome with B1 running on the VPS, with the pairing code saved in the B1 popup?');
     if (j.state === 'working' && t - j.picked > WORK_TIMEOUT_MS) fail(j, 'B1 took too long to answer.');
     if (t - j.updated > KEEP_MS) jobs.delete(j.id);
   }
@@ -113,7 +113,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && p === '/api/jobs') {
       const { text } = await readBody(req);
       if (!text || typeof text !== 'string') return send(res, 400, { error: 'text required' });
-      const j = { id: crypto.randomUUID(), text, state: 'queued', status: 'Waiting for B1 on the VPS…', bid: null, error: null, version: 1, created: now(), updated: now() };
+      const j = { id: crypto.randomBytes(16).toString('hex'), text, state: 'queued', status: 'Waiting for B1 on the VPS…', bid: null, error: null, version: 1, created: now(), updated: now() };
       jobs.set(j.id, j);
       queue.push(j.id);
       const w = [...workerWaiters][0];
@@ -129,10 +129,10 @@ const server = http.createServer(async (req, res) => {
       if (j.version > since) return send(res, 200, view(j));
       let done = false;
       const fn = () => { if (!done) { done = true; clearTimeout(t); send(res, 200, view(j)); } };
-      const t = setTimeout(() => { done = true; jobWaiters.get(j.id)?.delete(fn); send(res, 200, view(j)); }, WAIT_MS);
+      const t = setTimeout(() => { done = true; (jobWaiters.get(j.id) || new Set()).delete(fn); send(res, 200, view(j)); }, WAIT_MS);
       if (!jobWaiters.has(j.id)) jobWaiters.set(j.id, new Set());
       jobWaiters.get(j.id).add(fn);
-      req.on('close', () => { done = true; clearTimeout(t); jobWaiters.get(j.id)?.delete(fn); });
+      req.on('close', () => { done = true; clearTimeout(t); (jobWaiters.get(j.id) || new Set()).delete(fn); });
       return;
     }
 
