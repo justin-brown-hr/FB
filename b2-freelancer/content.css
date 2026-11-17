@@ -4,7 +4,7 @@
 #fba-panel button:disabled { opacity: .6; cursor: progress; }
 #fba-copy { background: #3a3f4a; }
 #fba-write { background: #139ff0; }
-#fba-status { max-width: 320px; background: #1f2229; color: #e6e6e6; padding: 7px 10px; border-radius: 6px; box-shadow: 0 2px 8px rgba(0,0,0,.35); font-size: 12.5px; }
+#fba-status { max-width: 340px; white-space: pre-line; background: #1f2229; color: #e6e6e6; padding: 7px 10px; border-radius: 6px; box-shadow: 0 2px 8px rgba(0,0,0,.35); font-size: 12.5px; }
 #fba-status:empty { display: none; }
 #fba-status.err { background: #5a1f24; }
 #fba-status.ok { background: #1f4a30; }

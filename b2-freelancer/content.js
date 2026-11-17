@@ -101,16 +101,135 @@
     );
   }
 
+  function fire(el, ...types) { types.forEach((t) => el.dispatchEvent(new Event(t, { bubbles: true }))); }
+
+  function flash(el) {
+    el.classList.add('fba-filled');
+    setTimeout(() => el.classList.remove('fba-filled'), 2500);
+  }
+
   function fillTextarea(ta, text) {
     const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;
     ta.focus();
     setter.call(ta, text);
-    ta.dispatchEvent(new Event('input', { bubbles: true }));
-    ta.dispatchEvent(new Event('change', { bubbles: true }));
-    ta.dispatchEvent(new Event('blur', { bubbles: true }));
+    fire(ta, 'input', 'change', 'blur');
     ta.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    ta.classList.add('fba-filled');
-    setTimeout(() => ta.classList.remove('fba-filled'), 2500);
+    flash(ta);
+  }
+
+  function fillInput(input, value) {
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+    input.focus();
+    setter.call(input, String(value));
+    fire(input, 'input', 'change', 'blur');
+    flash(input);
+  }
+
+  // The visible label text (e.g. "Bid Amount") -> the first matching control after it, in the same group.
+  function findLabelEl(regex) {
+    const cands = Array.from(document.querySelectorAll('label, legend, fl-text, h1, h2, h3, h4, h5, span, div, p'))
+      .filter((el) => regex.test((el.innerText || '').trim()) && (el.innerText || '').trim().length < 80);
+    // the smallest (innermost) element wins
+    return cands.sort((a, b) => a.innerText.length - b.innerText.length || (a.contains(b) ? 1 : -1))[0] || null;
+  }
+
+  function controlAfterLabel(regex, selector) {
+    const label = findLabelEl(regex);
+    if (!label) return null;
+    if (label.htmlFor) {
+      const byFor = document.getElementById(label.htmlFor);
+      if (byFor && byFor.matches(selector)) return byFor;
+    }
+    let el = label;
+    for (let i = 0; i < 6 && el; i++, el = el.parentElement) {
+      const found = Array.from(el.querySelectorAll(selector))
+        .find((c) => label.compareDocumentPosition(c) & Node.DOCUMENT_POSITION_FOLLOWING);
+      if (found) return found;
+    }
+    return null;
+  }
+
+  const INPUT = 'input:not([type=hidden]):not([type=checkbox]):not([type=radio]):not([type=file])';
+
+  function findAmountInput() {
+    return document.querySelector('#bidAmountInput, input[name="bidAmount"], input[formcontrolname="amount"], input[formcontrolname="bidAmount"]') ||
+      controlAfterLabel(/^(Bid Amount|Your bid|Hourly rate)\b/i, INPUT);
+  }
+
+  function findPeriodInput() {
+    return document.querySelector('#periodInput, input[name="period"], input[formcontrolname="period"]') ||
+      controlAfterLabel(/^(This project will be delivered in|Delivered in|Delivery time)\b/i, INPUT);
+  }
+
+  const P = window.FBAParse;
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const optMatches = (text, profile) => {
+    const t = P.norm(text);
+    return t && (t === P.norm(profile.option) || t === P.norm(profile.label) ||
+      t.startsWith(P.norm(profile.option) + ' ') || P.matchProfile(text) === profile);
+  };
+
+  async function selectProfile(profile) {
+    const label = findLabelEl(/^Select a profile\b/i);
+    if (!label) return 'profile dropdown not found';
+
+    // native <select>
+    const sel = controlAfterLabel(/^Select a profile\b/i, 'select');
+    if (sel) {
+      const opt = Array.from(sel.options).find((o) => optMatches(o.text, profile));
+      if (!opt) return `no "${profile.option}" option in the profile list`;
+      sel.value = opt.value;
+      opt.selected = true;
+      fire(sel, 'input', 'change');
+      flash(sel);
+      return null;
+    }
+
+    // custom dropdown: click the trigger, then click the option
+    const trigger = controlAfterLabel(/^Select a profile\b/i,
+      '[role="combobox"], [role="button"], button, [aria-haspopup], fl-select, fl-dropdown, .Select, [class*="select" i], [class*="dropdown" i]');
+    if (!trigger) return 'profile dropdown not found';
+    if (optMatches(trigger.innerText, profile)) return null; // already selected
+    trigger.click();
+    for (let i = 0; i < 10; i++) {
+      await sleep(150);
+      const opt = Array.from(document.querySelectorAll('[role="option"], [role="menuitem"], li, fl-list-item, button, a, span, div'))
+        .filter((o) => o.offsetParent !== null && !trigger.contains(o) && o.innerText && o.innerText.trim().length < 80 && optMatches(o.innerText.trim(), profile))
+        .sort((a, b) => a.innerText.length - b.innerText.length)[0];
+      if (opt) { opt.click(); flash(trigger); return null; }
+    }
+    document.body.click(); // close it again
+    return `no "${profile.option}" option in the profile list`;
+  }
+
+  // Fill the whole bid form from Claude's full reply. Returns a status summary.
+  async function fillBidForm(reply) {
+    const r = P.parseBidResponse(reply);
+    const done = [], missed = [];
+
+    if (r.profile) {
+      const err = await selectProfile(r.profile);
+      if (err) missed.push(err); else done.push(r.profile.option);
+    } else {
+      missed.push(r.profileText ? `profile "${r.profileText}" not matched — skipped` : 'no profile in reply — skipped');
+    }
+
+    if (r.amount != null) {
+      const inp = findAmountInput();
+      if (inp) { fillInput(inp, r.amount); done.push('$' + r.amount); } else missed.push('Bid Amount field not found');
+    } else missed.push('no price in reply');
+
+    if (r.days != null) {
+      const inp = findPeriodInput();
+      if (inp) { fillInput(inp, r.days); done.push(r.days + (r.days === 1 ? ' day' : ' days')); } else missed.push('delivery field not found');
+    } else missed.push('no timeline in reply');
+
+    const ta = findBidTextarea();
+    if (ta && r.bid) { fillTextarea(ta, r.bid); done.unshift('bid text'); }
+    else if (r.bid) { copyText(r.bid).catch(() => {}); missed.unshift('proposal box not found — bid copied to clipboard'); }
+    else missed.unshift('no bid text in reply');
+
+    return { ok: !!(ta && r.bid), text: (done.length ? 'Filled: ' + done.join(' · ') : '') + (missed.length ? `\n⚠ ${missed.join('; ')}` : '') };
   }
 
   // ---------------- UI ----------------
@@ -159,7 +278,7 @@
     writeBtn.textContent = 'Writing…';
     setStatus('Sending project to Claude (B1)…');
 
-    let port;
+    let port, gotResult = false;
     const done = (msg, kind) => {
       busy = false;
       writeBtn.disabled = false;
@@ -183,17 +302,13 @@
       if (m.type === 'STATUS') setStatus(m.text);
       else if (m.type === 'ERROR') done('Error: ' + m.error, 'err');
       else if (m.type === 'RESULT') {
-        const ta = findBidTextarea();
-        if (ta) {
-          fillTextarea(ta, m.bid);
-          done('Bid written ✓  Review it before placing your bid.', 'ok');
-        } else {
-          copyText(m.bid).catch(() => {});
-          done('Bid ready, but the proposal box was not found — bid copied to clipboard.', 'err');
-        }
+        gotResult = true;
+        fillBidForm(m.bid)
+          .then((r) => done(r.text + (r.ok ? '\nReview it before placing your bid.' : ''), r.ok ? 'ok' : 'err'))
+          .catch((e) => done('Error while filling the form: ' + (e?.message || e), 'err'));
       }
     });
-    port.onDisconnect.addListener(() => { if (busy) done('Connection to B1 was lost.', 'err'); });
+    port.onDisconnect.addListener(() => { if (busy && !gotResult) done('Connection to B1 was lost.', 'err'); });
 
     port.postMessage({ type: 'GENERATE', text });
   }

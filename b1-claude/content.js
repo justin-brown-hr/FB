@@ -41,8 +41,24 @@
     const blocks = Array.from(el.querySelectorAll('.standard-markdown, .progressive-markdown'))
       .filter((b) => !b.closest('details, [class*="thinking" i], [data-testid*="thinking" i]'))
       .filter((b) => !b.parentElement?.closest('.standard-markdown, .progressive-markdown'));
-    const text = blocks.length ? blocks.map((b) => b.innerText).join('\n\n') : el.innerText;
+    const parts = blocks.length ? blocks : [el];
+    const text = parts.map(withFences).join('\n\n');
     return (text || '').trim();
+  }
+
+  // innerText of a block, with each code box wrapped in ``` so B2 can tell where it starts and ends.
+  // The full response is still returned unchanged otherwise.
+  function withFences(block) {
+    let text = block.innerText || '';
+    block.querySelectorAll('pre').forEach((pre) => {
+      const code = (pre.querySelector('code') || pre).innerText.replace(/\n+$/, '');
+      if (!code.trim()) return;
+      const whole = pre.innerText.replace(/\n+$/, '');
+      const target = text.includes(whole) ? whole : code;
+      const i = text.indexOf(target);
+      if (i >= 0) text = text.slice(0, i) + '```\n' + code + '\n```' + text.slice(i + target.length);
+    });
+    return text;
   }
 
   function state() {

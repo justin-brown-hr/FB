@@ -9,7 +9,7 @@
   "content_scripts": [
     {
       "matches": ["https://www.freelancer.com/*", "https://freelancer.com/*"],
-      "js": ["content.js"],
+      "js": ["parse.js", "content.js"],
       "css": ["content.css"],
       "run_at": "document_idle"
     }

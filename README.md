@@ -8,8 +8,31 @@ Two Chrome / Edge extensions that work together:
 | **B2** | `b2-freelancer/` | freelancer.com project pages | Adds **Copy project** and **Write bid** buttons (bottom-right) |
 
 - **Copy project**: copies the project title, URL, budget, description and skills to the clipboard.
-- **Write bid**: copies the project, sends it to B1, then puts Claude's reply into the
-  *"Describe your proposal"* box. You review it and place the bid yourself.
+- **Write bid**: copies the project and sends it to B1. B1 returns Claude's full reply, and B2 picks out the parts and fills the bid form:
+
+  ```
+  Profile: Logo • UI/UX • Illustration • Book Cover • Figma · $75 (3 h) · 2 days   -> profile "Design", Bid Amount 75, delivered in 2 days
+  ```text
+  Hi there, ...                                                                    -> the code box goes into "Describe your proposal"
+  ```
+  Notes for you ...                                                                -> ignored
+  ```
+
+  Nothing is submitted. You review the form and place the bid yourself.
+
+### Profile mapping (`b2-freelancer/parse.js`, `PROFILES`)
+
+| Profile in Claude's reply | Option in "Select a profile" |
+|---|---|
+| Software Consultant \| Web Platforms • SaaS • AI | General |
+| iOS & Android Developer \| React Native • Flutter | Mobile |
+| AI Automation Engineer \| Chatbots • n8n • GHL | AI & automation |
+| Logo • UI/UX • Illustration • Book Cover • Figma | Design |
+| 2D/3D CAD \| AutoCAD • Civil • Blender 3D Rendering | CAD |
+| Game Dev \| Unity • C# • Unreal • Roblox • Blender | Game |
+
+Shortened labels such as "Game Dev | Unity" still match. If the profile doesn't match any row, the profile is left as it is.
+Timelines in hours, weeks or months are converted to days (3 weeks becomes 21).
 
 ## Install
 
@@ -37,7 +60,8 @@ Open a project page on freelancer.com and click **Write bid**. The status bubble
 
 ## Notes
 
-- B1 sends Claude's whole last reply. If you want only the bid back, tell the BID chat (or the template) to reply with the bid text only.
+- B1 sends Claude's whole last reply, with each code box wrapped in ``` so B2 can find the bid. If there is no code box, B2 uses everything after the Profile line.
+- The status bubble lists what was filled, and anything that was skipped or not found.
 - claude.ai and freelancer.com change their HTML sometimes. The selectors are at the top of each `content.js`
   (`findInput`, `findSendButton`, `assistantMessages`, `findBidTextarea`, `projectDetailsContainer`)
   and include fallbacks.
