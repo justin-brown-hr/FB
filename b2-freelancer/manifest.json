@@ -4,14 +4,41 @@
   "version": "1.0.0",
   "description": "Adds 'Copy project' and 'Write bid' buttons to Freelancer.com project pages. Write bid asks B1 (Claude) and fills your proposal.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0dJCUIRri7Lf5+31a3ZiFY+TlZ6LfQUp0Ht6zd9BIfzxPQhQZZ5MWh/HF4HHNMb8BxGRiKViJ9ZgDAkmc33fOSUCp4XazWEdN55MWoAxBW4oKKlLrct7tmiQgIVeciEFMrDD9XnsQ92YT3vzdPnx9BSjGNuKQAIaA9r8x+pRxwBlxMF5MYR2jrSMHjkp+JhAKXQkex6EuUCKl+H6mJmrR47c+aPR0CX/xYyyMoFC0mH5wpDYz9GcYZZ8bN6hfuJ2jfk/BSq/p7bg5nobBklcnCne0iYklBwfmglIE6BIwW+QyNQbRG0qNPij190m23cd03f18/IZl5XL3dSpf/kO6QIDAQAB",
-  "permissions": ["clipboardWrite"],
-  "background": { "service_worker": "background.js" },
+  "permissions": [
+    "clipboardWrite"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
   "content_scripts": [
     {
-      "matches": ["https://www.freelancer.com/*", "https://freelancer.com/*"],
-      "js": ["parse.js", "content.js"],
-      "css": ["content.css"],
+      "matches": [
+        "https://www.freelancer.com/*",
+        "https://freelancer.com/*"
+      ],
+      "js": [
+        "parse.js",
+        "content.js"
+      ],
+      "css": [
+        "content.css"
+      ],
       "run_at": "document_idle"
     }
-  ]
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    },
+    "default_title": "Bid Assistant B2 (Freelancer)"
+  }
 }

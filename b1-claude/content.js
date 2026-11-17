@@ -131,12 +131,31 @@
     return link ? link.href : null;
   }
 
+  // Small badge so you can see B1 is active on claude.ai (click to hide it).
+  function badge(text, color) {
+    let b = document.getElementById('fba-b1-badge');
+    if (!b) {
+      b = document.createElement('div');
+      b.id = 'fba-b1-badge';
+      b.title = 'Bid Assistant B1 is active (click to hide)';
+      b.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);top:8px;z-index:2147483000;padding:3px 10px;border-radius:999px;font:600 11px system-ui,sans-serif;color:#fff;cursor:pointer;opacity:.85;box-shadow:0 1px 4px rgba(0,0,0,.3)';
+      b.onclick = () => b.remove();
+      document.body.appendChild(b);
+    }
+    b.textContent = text;
+    b.style.background = color;
+  }
+  const ready = () => badge('B1 ready', '#2e7d4f');
+  ready();
+
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     switch (msg?.type) {
       case 'PING': sendResponse({ ok: true, url: location.href }); return;
       case 'STATE': sendResponse(state()); return;
       case 'FIND_CHAT_LINK': sendResponse({ href: findChatLink(msg.name || 'BID') }); return;
       case 'SEND':
+        badge('B1: writing bid…', '#d97757');
+        setTimeout(() => document.getElementById('fba-b1-badge') && ready(), 120000);
         send(msg.text).then(() => sendResponse({ ok: true }))
           .catch((e) => sendResponse({ ok: false, error: String(e?.message || e) }));
         return true; // async
