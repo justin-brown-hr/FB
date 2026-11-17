@@ -283,9 +283,11 @@ chrome.runtime.onMessage.addListener((msg, _s, sendResponse) => {
     if (!settings.relayUrl) return sendResponse({ text: 'No pairing code saved (fine if B2 is in this same Chrome).' });
     try {
       const r = await relayFetch(settings, '/api/health');
-      if (r.status === 401) return sendResponse({ text: '✗ Relay reachable, but the token is wrong.' });
+      if (r.status === 401) return sendResponse({ text: '✗ The pairing code is wrong (token mismatch).' });
       const h = await r.json();
-      sendResponse({ text: `✓ Relay reachable. B1 polling: ${relayLoopRunning ? 'yes' : 'no'}${relayLastError ? ' — ' + relayLastError : ''}` });
+      sendResponse({ text: relayLoopRunning && !relayLastError
+        ? '✓ Connected — waiting for bids from B2'
+        : '✗ Not connected yet' + (relayLastError ? ': ' + relayLastError : ' — try again in 30 s') });
     } catch (e) {
       sendResponse({ text: '✗ Cannot reach relay: ' + (e?.message || e) });
     }
