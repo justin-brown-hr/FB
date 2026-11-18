@@ -55,7 +55,11 @@ Keep a claude.ai tab open (or let B1 open one). B1 sends the message as you, in 
 
 ## Use
 
-Open a project page on freelancer.com and click **Write bid**. The status bubble shows progress. After about 10–60 s the proposal box is filled and outlined in green.
+Open a project page on freelancer.com and click **Write bid** (top right). An alert in the middle of the screen shows progress and then the result:
+
+- **Success:** the profile matched one of your 6 profiles *and* Claude's reply had a code box. The form is filled, and the alert shows a **Bid** button.
+  Clicking **Bid** ticks **SEALED** under Optional Upgrades and clicks **Place Bid**. Nothing else is ticked.
+- **Failed:** there was no code box, or the profile didn't match. The alert lists why. Whatever could be filled is filled, but there's no Bid button, so you place the bid yourself.
 
 ## B1 on a VPS, B2 on your PC
 

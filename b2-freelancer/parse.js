@@ -73,16 +73,11 @@
     return out;
   }
 
-  function extractBid(text, profileIdx) {
-    // 1) fenced code block (B1 wraps Claude's code boxes in ```)
+  // The bid is Claude's code box (B1 wraps code boxes in ```). No code box = no bid.
+  function extractBid(text) {
     const fences = [...text.matchAll(/```[^\n]*\n([\s\S]*?)\n?```/g)].map((m) => m[1].trim()).filter(Boolean);
-    if (fences.length) {
-      return fences.reduce((a, b) => (b.length > a.length ? b : a)); // the bid is the biggest box
-    }
-    // 2) fallback: everything after the Profile line
-    const lines = text.split('\n');
-    const start = profileIdx >= 0 ? profileIdx + 1 : 0;
-    return lines.slice(start).join('\n').trim();
+    if (!fences.length) return null;
+    return fences.reduce((a, b) => (b.length > a.length ? b : a)); // the bid is the biggest box
   }
 
   function parseBidResponse(text) {
@@ -92,7 +87,7 @@
     const meta = profileIdx >= 0 ? parseProfileLine(lines[profileIdx].trim()) : { profileText: null, amount: null, days: null };
     const profile = matchProfile(meta.profileText);
     return {
-      bid: extractBid(text, profileIdx),
+      bid: extractBid(text),            // string, or null when there is no code box
       profileText: meta.profileText,
       profile,                 // { label, option } or null
       amount: meta.amount,     // number or null

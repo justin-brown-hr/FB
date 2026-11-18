@@ -202,67 +202,180 @@
     return `no "${profile.option}" option in the profile list`;
   }
 
-  // Fill the whole bid form from Claude's full reply. Returns a status summary.
+  // Fill the whole bid form from Claude's full reply.
+  // success = profile matched + code box found + every field filled.
   async function fillBidForm(reply) {
     const r = P.parseBidResponse(reply);
-    const done = [], missed = [];
+    const filled = [], problems = [];
+
+    if (!r.bid) problems.push('No code box (bid) in Claude\'s reply. The full reply was copied to your clipboard.');
+    if (!r.profile) problems.push(r.profileText ? `Profile "${r.profileText}" does not match any of your profiles.` : 'No "Profile:" line in Claude\'s reply.');
 
     if (r.profile) {
       const err = await selectProfile(r.profile);
-      if (err) missed.push(err); else done.push(r.profile.option);
-    } else {
-      missed.push(r.profileText ? `profile "${r.profileText}" not matched — skipped` : 'no profile in reply — skipped');
+      if (err) problems.push('Profile: ' + err); else filled.push(['Profile', r.profile.option]);
     }
-
     if (r.amount != null) {
       const inp = findAmountInput();
-      if (inp) { fillInput(inp, r.amount); done.push('$' + r.amount); } else missed.push('Bid Amount field not found');
-    } else missed.push('no price in reply');
-
+      if (inp) { fillInput(inp, r.amount); filled.push(['Bid amount', '$' + r.amount]); } else problems.push('Bid Amount field not found on the page.');
+    } else problems.push('No price in the Profile line.');
     if (r.days != null) {
       const inp = findPeriodInput();
-      if (inp) { fillInput(inp, r.days); done.push(r.days + (r.days === 1 ? ' day' : ' days')); } else missed.push('delivery field not found');
-    } else missed.push('no timeline in reply');
+      if (inp) { fillInput(inp, r.days); filled.push(['Delivery', r.days + (r.days === 1 ? ' day' : ' days')]); } else problems.push('Delivery field not found on the page.');
+    } else problems.push('No timeline in the Profile line.');
 
+    if (r.bid) {
+      const ta = findBidTextarea();
+      if (ta) { fillTextarea(ta, r.bid); filled.push(['Proposal', r.bid.length + ' characters']); }
+      else { copyText(r.bid).catch(() => {}); problems.push('Proposal box not found — bid copied to clipboard.'); }
+      if (r.bid.length < 100) problems.push('Bid is shorter than Freelancer\'s 100-character minimum.');
+    } else {
+      copyText(reply).catch(() => {});
+    }
+    return { success: problems.length === 0, filled, problems };
+  }
+
+  // ---------------- place bid ----------------
+
+  const visible = (el) => !!el && el.offsetParent !== null && getComputedStyle(el).visibility !== 'hidden';
+
+  // The checkbox in the "Optional Upgrades" row whose pill says `name` (e.g. SEALED).
+  function findUpgradeCheckbox(name) {
+    const want = name.toLowerCase();
+    const pills = Array.from(document.querySelectorAll('span, div, label, fl-upgrade-tag, fl-text, button, a'))
+      .filter((el) => (el.innerText || '').trim().toLowerCase() === want)
+      .sort((a, b) => (a.contains(b) ? 1 : b.contains(a) ? -1 : 0));
+    for (const pill of pills) {
+      let el = pill;
+      for (let i = 0; i < 7 && el; i++, el = el.parentElement) {
+        const boxes = el.querySelectorAll('input[type="checkbox"], [role="checkbox"]');
+        if (boxes.length === 1) return boxes[0];
+        if (boxes.length > 1) break; // climbed past this row
+      }
+    }
+    return null;
+  }
+
+  const isChecked = (box) => box.checked === true || box.getAttribute('aria-checked') === 'true';
+
+  async function checkBox(box) {
+    if (isChecked(box)) return true;
+    const label = box.id && document.querySelector(`label[for="${CSS.escape(box.id)}"]`);
+    const targets = [box, label, box.closest('label'), box.parentElement].filter(Boolean);
+    for (const t of targets) {
+      t.click();
+      await sleep(300);
+      if (isChecked(box)) return true;
+    }
+    return isChecked(box);
+  }
+
+  function findPlaceBidButton() {
+    return Array.from(document.querySelectorAll('button, [role="button"], a'))
+      .find((b) => /^place bid$/i.test((b.innerText || '').trim()) && visible(b) && !b.closest('#fba-panel, #fba-alert'));
+  }
+
+  async function placeBid() {
     const ta = findBidTextarea();
-    if (ta && r.bid) { fillTextarea(ta, r.bid); done.unshift('bid text'); }
-    else if (r.bid) { copyText(r.bid).catch(() => {}); missed.unshift('proposal box not found — bid copied to clipboard'); }
-    else missed.unshift('no bid text in reply');
+    if (!ta || ta.value.trim().length < 100) return { ok: false, text: 'The proposal box is empty or shorter than 100 characters.' };
 
-    return { ok: !!(ta && r.bid), text: (done.length ? 'Filled: ' + done.join(' · ') : '') + (missed.length ? `\n⚠ ${missed.join('; ')}` : '') };
+    const box = findUpgradeCheckbox('SEALED');
+    if (!box) return { ok: false, text: 'Could not find the SEALED option. Nothing was placed.' };
+    if (!(await checkBox(box))) return { ok: false, text: 'Could not tick the SEALED option. Nothing was placed.' };
+
+    const btn = findPlaceBidButton();
+    if (!btn) return { ok: false, text: 'SEALED is ticked, but the Place Bid button was not found.' };
+    if (btn.disabled || btn.getAttribute('aria-disabled') === 'true') return { ok: false, text: 'SEALED is ticked, but Place Bid is disabled — check the form for errors.' };
+    btn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    btn.click();
+
+    // give Freelancer a moment, then look for a visible error message in the bid form
+    await sleep(2500);
+    const err = Array.from(document.querySelectorAll('[class*="error" i], [role="alert"], fl-banner-alert'))
+      .filter((e) => visible(e) && !e.closest('#fba-alert, #fba-panel') && (e.innerText || '').trim())
+      .map((e) => e.innerText.trim())[0];
+    if (err) return { ok: false, text: 'Freelancer says: ' + err.slice(0, 200) };
+    return { ok: true, text: 'Place Bid clicked with SEALED ticked.' };
   }
 
   // ---------------- UI ----------------
 
-  let panel, statusEl, writeBtn, busy = false;
+  let panel, writeBtn, busy = false, alertBox;
+  const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
-  function setStatus(text, kind = '') {
-    if (!statusEl) return;
-    statusEl.textContent = text;
-    statusEl.className = kind;
+  // Alert card in the middle of the screen. kind: info | ok | err
+  function showAlert({ kind = 'info', title, html = '', actions = [], autoHide = 0, spinner = false }) {
+    if (!alertBox) {
+      alertBox = document.createElement('div');
+      alertBox.id = 'fba-alert';
+      document.body.appendChild(alertBox);
+    }
+    clearTimeout(alertBox._t);
+    alertBox.className = kind;
+    alertBox.innerHTML = `
+      <div class="fba-title">${spinner ? '<span class="fba-spin"></span>' : ''}${esc(title)}</div>
+      ${html ? `<div class="fba-body">${html}</div>` : ''}
+      <div class="fba-actions"></div>`;
+    const bar = alertBox.querySelector('.fba-actions');
+    [...actions, ...(spinner ? [] : [{ label: 'Close', onClick: hideAlert }])].forEach((a) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = a.label;
+      b.className = a.primary ? 'primary' : '';
+      if (a.id) b.id = a.id;
+      b.onclick = () => a.onClick(b);
+      bar.appendChild(b);
+    });
+    alertBox.style.display = '';
+    if (autoHide) alertBox._t = setTimeout(hideAlert, autoHide);
+  }
+  function hideAlert() { if (alertBox) alertBox.style.display = 'none'; }
+
+  function resultAlert(r) {
+    const rows = r.filled.map(([k, v]) => `<div class="fba-row"><span>${esc(k)}</span><b>${esc(v)}</b></div>`).join('');
+    if (r.success) {
+      showAlert({
+        kind: 'ok', title: 'Success — bid is ready',
+        html: rows + '<div class="fba-note">Clicking <b>Bid</b> ticks SEALED and clicks Place Bid.</div>',
+        actions: [{ label: 'Bid', primary: true, id: 'fba-bid', onClick: onBidClick }]
+      });
+    } else {
+      showAlert({
+        kind: 'err', title: 'Failed — bid not ready',
+        html: `<ul>${r.problems.map((p) => `<li>${esc(p)}</li>`).join('')}</ul>` + (rows ? `<div class="fba-sub">Filled anyway:</div>${rows}` : '') +
+          '<div class="fba-note">Check the form and place the bid yourself if you want to.</div>'
+      });
+    }
+  }
+
+  async function onBidClick(btn) {
+    btn.disabled = true;
+    btn.textContent = 'Placing…';
+    let r;
+    try { r = await placeBid(); } catch (e) { r = { ok: false, text: String(e?.message || e) }; }
+    showAlert(r.ok
+      ? { kind: 'ok', title: 'Bid placed ✓', html: esc(r.text), autoHide: 6000 }
+      : { kind: 'err', title: 'Bid not placed', html: esc(r.text) });
   }
 
   function buildPanel() {
     panel = document.createElement('div');
     panel.id = 'fba-panel';
     panel.innerHTML = `
-      <div id="fba-status"></div>
       <div class="fba-btns">
         <button id="fba-copy" type="button">Copy project</button>
         <button id="fba-write" type="button">Write bid</button>
       </div>`;
     document.body.appendChild(panel);
-    statusEl = panel.querySelector('#fba-status');
     writeBtn = panel.querySelector('#fba-write');
 
     panel.querySelector('#fba-copy').addEventListener('click', async () => {
       try {
         await copyText(projectText());
-        setStatus('Project details copied to clipboard ✓', 'ok');
+        showAlert({ kind: 'ok', title: 'Project details copied ✓', autoHide: 2000 });
       } catch (e) {
-        setStatus('Copy failed: ' + (e?.message || e), 'err');
+        showAlert({ kind: 'err', title: 'Copy failed', html: esc(e?.message || e) });
       }
-      setTimeout(() => !busy && setStatus(''), 3000);
     });
 
     writeBtn.addEventListener('click', writeBid);
@@ -276,17 +389,17 @@
     busy = true;
     writeBtn.disabled = true;
     writeBtn.textContent = 'Writing…';
-    setStatus('Sending project to Claude (B1)…');
+    showAlert({ title: 'Sending project to Claude…', spinner: true });
 
     let port, gotResult = false;
-    const done = (msg, kind) => {
+    const finish = () => {
       busy = false;
       writeBtn.disabled = false;
       writeBtn.textContent = 'Write bid';
       clearInterval(ping);
-      setStatus(msg, kind);
       try { port && port.disconnect(); } catch (_) {}
     };
+    const fail = (msg) => { finish(); showAlert({ kind: 'err', title: 'Failed', html: esc(msg) }); };
 
     // keep both service workers alive while Claude is writing
     const ping = setInterval(() => { try { port.postMessage({ type: 'PING' }); } catch (_) {} }, 20000);
@@ -294,21 +407,21 @@
     try {
       port = chrome.runtime.connect({ name: 'bid' });
     } catch (e) {
-      done('Extension was reloaded — refresh this page and try again.', 'err');
+      fail('Extension was reloaded — refresh this page and try again.');
       return;
     }
 
     port.onMessage.addListener((m) => {
-      if (m.type === 'STATUS') setStatus(m.text);
-      else if (m.type === 'ERROR') done('Error: ' + m.error, 'err');
+      if (m.type === 'STATUS') showAlert({ title: m.text, spinner: true });
+      else if (m.type === 'ERROR') fail(m.error);
       else if (m.type === 'RESULT') {
         gotResult = true;
         fillBidForm(m.bid)
-          .then((r) => done(r.text + (r.ok ? '\nReview it before placing your bid.' : ''), r.ok ? 'ok' : 'err'))
-          .catch((e) => done('Error while filling the form: ' + (e?.message || e), 'err'));
+          .then((r) => { finish(); resultAlert(r); })
+          .catch((e) => fail('Error while filling the form: ' + (e?.message || e)));
       }
     });
-    port.onDisconnect.addListener(() => { if (busy && !gotResult) done('Connection to B1 was lost.', 'err'); });
+    port.onDisconnect.addListener(() => { if (busy && !gotResult) fail('Connection to B1 was lost.'); });
 
     port.postMessage({ type: 'GENERATE', text });
   }
