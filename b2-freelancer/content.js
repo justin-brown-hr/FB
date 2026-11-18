@@ -298,6 +298,14 @@
     return { ok: true, text: 'Place Bid clicked with SEALED ticked.' };
   }
 
+  // Progress messages from B1 / the relay, reworded without naming the AI.
+  function progressText(t) {
+    t = (t || '').toLowerCase();
+    if (/writing/.test(t)) return 'Writing bid…';
+    if (/sending/.test(t)) return 'Sending project…';
+    return 'Preparing…';   // opening the chat, waiting for the input box, waiting for / picked up by B1
+  }
+
   // ---------------- UI ----------------
 
   let panel, writeBtn, bidBtn, busy = false, alertBox;
@@ -435,7 +443,7 @@
     setBidReady(false);
     writeBtn.disabled = true;
     writeBtn.textContent = 'Writing…';
-    showAlert({ text: 'Sending project to Claude…', spinner: true });
+    showAlert({ text: 'Sending project…', spinner: true });
 
     let port, gotResult = false;
     const finish = () => {
@@ -458,7 +466,7 @@
     }
 
     port.onMessage.addListener((m) => {
-      if (m.type === 'STATUS') showAlert({ text: m.text, spinner: true });
+      if (m.type === 'STATUS') showAlert({ text: progressText(m.text), spinner: true });
       else if (m.type === 'ERROR') fail(m.error);
       else if (m.type === 'RESULT') {
         gotResult = true;
