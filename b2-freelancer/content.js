@@ -208,8 +208,8 @@
     const r = P.parseBidResponse(reply);
     const filled = [], problems = [];
 
-    if (!r.bid) problems.push('No code box (bid) in Claude\'s reply. The full reply was copied to your clipboard.');
-    if (!r.profile) problems.push(r.profileText ? `Profile "${r.profileText}" does not match any of your profiles.` : 'No "Profile:" line in Claude\'s reply.');
+    if (!r.bid) problems.push('no code box (reply copied to clipboard)');
+    if (!r.profile) problems.push(r.profileText ? `profile "${r.profileText}" not matched` : 'no Profile line');
 
     if (r.profile) {
       const err = await selectProfile(r.profile);
@@ -303,59 +303,63 @@
   let panel, writeBtn, busy = false, alertBox;
   const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
-  // Alert card in the middle of the screen. kind: info | ok | err
-  function showAlert({ kind = 'info', title, html = '', actions = [], autoHide = 0, spinner = false }) {
+  // One-line toast at the top center. kind: info | ok | err
+  // Progress toasts stay until replaced; others hide by themselves (paused while the mouse is over it).
+  const HIDE_MS = { info: 4000, ok: 5000, err: 8000, bid: 20000 };
+
+  function showAlert({ kind = 'info', text, actions = [], autoHide, spinner = false }) {
     if (!alertBox) {
       alertBox = document.createElement('div');
       alertBox.id = 'fba-alert';
+      alertBox.addEventListener('mouseenter', () => clearTimeout(alertBox._t));
+      alertBox.addEventListener('mouseleave', () => armHide());
       document.body.appendChild(alertBox);
     }
-    clearTimeout(alertBox._t);
+    const icon = spinner ? '<span class="fba-spin"></span>' : `<span class="fba-icon">${kind === 'ok' ? '✓' : kind === 'err' ? '✕' : 'ℹ'}</span>`;
     alertBox.className = kind;
-    alertBox.innerHTML = `
-      <div class="fba-title">${spinner ? '<span class="fba-spin"></span>' : ''}${esc(title)}</div>
-      ${html ? `<div class="fba-body">${html}</div>` : ''}
-      <div class="fba-actions"></div>`;
+    alertBox.innerHTML = `${icon}<span class="fba-text" title="${esc(text)}">${esc(text)}</span><span class="fba-actions"></span><button type="button" class="fba-x" title="Close">×</button>`;
     const bar = alertBox.querySelector('.fba-actions');
-    [...actions, ...(spinner ? [] : [{ label: 'Close', onClick: hideAlert }])].forEach((a) => {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.textContent = a.label;
-      b.className = a.primary ? 'primary' : '';
-      if (a.id) b.id = a.id;
-      b.onclick = () => a.onClick(b);
-      bar.appendChild(b);
+    actions.forEach((a) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.textContent = a.label;
+      btn.className = 'fba-act';
+      if (a.id) btn.id = a.id;
+      btn.onclick = () => a.onClick(btn);
+      bar.appendChild(btn);
     });
+    alertBox.querySelector('.fba-x').onclick = hideAlert;
     alertBox.style.display = '';
-    if (autoHide) alertBox._t = setTimeout(hideAlert, autoHide);
+    alertBox._hideMs = spinner ? 0 : (autoHide ?? HIDE_MS[kind] ?? 5000);
+    armHide();
   }
-  function hideAlert() { if (alertBox) alertBox.style.display = 'none'; }
+  function armHide() {
+    if (!alertBox) return;
+    clearTimeout(alertBox._t);
+    if (alertBox._hideMs) alertBox._t = setTimeout(hideAlert, alertBox._hideMs);
+  }
+  function hideAlert() { if (alertBox) { clearTimeout(alertBox._t); alertBox.style.display = 'none'; } }
 
   function resultAlert(r) {
-    const rows = r.filled.map(([k, v]) => `<div class="fba-row"><span>${esc(k)}</span><b>${esc(v)}</b></div>`).join('');
     if (r.success) {
       showAlert({
-        kind: 'ok', title: 'Success — bid is ready',
-        html: rows + '<div class="fba-note">Clicking <b>Bid</b> ticks SEALED and clicks Place Bid.</div>',
-        actions: [{ label: 'Bid', primary: true, id: 'fba-bid', onClick: onBidClick }]
+        kind: 'ok', autoHide: HIDE_MS.bid,
+        text: 'Ready: ' + r.filled.map(([, v]) => v).join(' · '),
+        actions: [{ label: 'Bid', id: 'fba-bid', onClick: onBidClick }]
       });
     } else {
-      showAlert({
-        kind: 'err', title: 'Failed — bid not ready',
-        html: `<ul>${r.problems.map((p) => `<li>${esc(p)}</li>`).join('')}</ul>` + (rows ? `<div class="fba-sub">Filled anyway:</div>${rows}` : '') +
-          '<div class="fba-note">Check the form and place the bid yourself if you want to.</div>'
-      });
+      showAlert({ kind: 'err', text: 'Failed: ' + r.problems.join(' · ') });
     }
   }
 
   async function onBidClick(btn) {
+    clearTimeout(alertBox._t);
+    alertBox._hideMs = 0;
     btn.disabled = true;
     btn.textContent = 'Placing…';
     let r;
     try { r = await placeBid(); } catch (e) { r = { ok: false, text: String(e?.message || e) }; }
-    showAlert(r.ok
-      ? { kind: 'ok', title: 'Bid placed ✓', html: esc(r.text), autoHide: 6000 }
-      : { kind: 'err', title: 'Bid not placed', html: esc(r.text) });
+    showAlert(r.ok ? { kind: 'ok', text: 'Bid placed (Sealed) ✓' } : { kind: 'err', text: 'Bid not placed: ' + r.text });
   }
 
   function buildPanel() {
@@ -372,9 +376,9 @@
     panel.querySelector('#fba-copy').addEventListener('click', async () => {
       try {
         await copyText(projectText());
-        showAlert({ kind: 'ok', title: 'Project details copied ✓', autoHide: 2000 });
+        showAlert({ kind: 'ok', text: 'Project details copied', autoHide: 2000 });
       } catch (e) {
-        showAlert({ kind: 'err', title: 'Copy failed', html: esc(e?.message || e) });
+        showAlert({ kind: 'err', text: 'Copy failed: ' + (e?.message || e) });
       }
     });
 
@@ -389,7 +393,7 @@
     busy = true;
     writeBtn.disabled = true;
     writeBtn.textContent = 'Writing…';
-    showAlert({ title: 'Sending project to Claude…', spinner: true });
+    showAlert({ text: 'Sending project to Claude…', spinner: true });
 
     let port, gotResult = false;
     const finish = () => {
@@ -399,7 +403,7 @@
       clearInterval(ping);
       try { port && port.disconnect(); } catch (_) {}
     };
-    const fail = (msg) => { finish(); showAlert({ kind: 'err', title: 'Failed', html: esc(msg) }); };
+    const fail = (msg) => { finish(); showAlert({ kind: 'err', text: 'Failed: ' + msg }); };
 
     // keep both service workers alive while Claude is writing
     const ping = setInterval(() => { try { port.postMessage({ type: 'PING' }); } catch (_) {} }, 20000);
@@ -412,7 +416,7 @@
     }
 
     port.onMessage.addListener((m) => {
-      if (m.type === 'STATUS') showAlert({ title: m.text, spinner: true });
+      if (m.type === 'STATUS') showAlert({ text: m.text, spinner: true });
       else if (m.type === 'ERROR') fail(m.error);
       else if (m.type === 'RESULT') {
         gotResult = true;

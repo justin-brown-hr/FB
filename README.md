@@ -55,7 +55,7 @@ Keep a claude.ai tab open (or let B1 open one). B1 sends the message as you, in 
 
 ## Use
 
-Open a project page on freelancer.com and click **Write bid** (top right). An alert in the middle of the screen shows progress and then the result:
+Open a project page on freelancer.com and click **Write bid** (top right). A one-line alert at the top center shows progress and then the result. It hides by itself (it stays while your mouse is over it), and × closes it:
 
 - **Success:** the profile matched one of your 6 profiles *and* Claude's reply had a code box. The form is filled, and the alert shows a **Bid** button.
   Clicking **Bid** ticks **SEALED** under Optional Upgrades and clicks **Place Bid**. Nothing else is ticked.
