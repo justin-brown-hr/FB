@@ -300,7 +300,7 @@
 
   // ---------------- UI ----------------
 
-  let panel, writeBtn, busy = false, alertBox;
+  let panel, writeBtn, bidBtn, busy = false, alertBox;
   const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
   // One-line toast at the top center. kind: info | ok | err
@@ -365,10 +365,10 @@
       // green: profile · budget · timeline (+ a note if a form field could not be set)
       const p = r.parsed;
       const parts = [p.profile.option, p.amount != null ? '$' + p.amount : null, p.days != null ? p.days + (p.days === 1 ? ' day' : ' days') : null].filter(Boolean);
+      setBidReady(true);
       showAlert({
-        kind: 'ok', autoHide: HIDE_MS.bid,
+        kind: 'ok',
         text: parts.join(' · ') + (r.problems.length ? '  ⚠ ' + r.problems.join(' · ') : ''),
-        actions: [{ label: 'Bid', id: 'fba-bid', onClick: onBidClick }]
       });
     } else {
       // red alert = failed; the text is just Claude's reply (it explains why)
@@ -376,14 +376,27 @@
     }
   }
 
-  async function onBidClick(btn) {
-    clearTimeout(alertBox._t);
-    alertBox._hideMs = 0;
-    btn.disabled = true;
-    btn.textContent = 'Placing…';
+  // The Bid button under Copy project / Write bid: active only when the last Write bid succeeded.
+  function setBidReady(on) {
+    if (!bidBtn) return;
+    bidBtn.disabled = !on;
+    bidBtn.textContent = 'Bid';
+    bidBtn.title = on ? 'Tick SEALED and click Place Bid' : 'Click Write bid first';
+  }
+
+  async function onBidClick() {
+    if (bidBtn.disabled) return;
+    bidBtn.disabled = true;
+    bidBtn.textContent = 'Placing…';
     let r;
     try { r = await placeBid(); } catch (e) { r = { ok: false, text: String(e?.message || e) }; }
-    showAlert(r.ok ? { kind: 'ok', text: 'Bid placed (Sealed) ✓' } : { kind: 'err', text: 'Bid not placed: ' + r.text });
+    if (r.ok) {
+      setBidReady(false);
+      showAlert({ kind: 'ok', text: 'Bid placed (Sealed)' });
+    } else {
+      setBidReady(true); // let you fix the form and try again
+      showAlert({ kind: 'err', text: 'Bid not placed: ' + r.text });
+    }
   }
 
   function buildPanel() {
@@ -393,9 +406,13 @@
       <div class="fba-btns">
         <button id="fba-copy" type="button">Copy project</button>
         <button id="fba-write" type="button">Write bid</button>
-      </div>`;
+      </div>
+      <button id="fba-bid" type="button" disabled>Bid</button>`;
     document.body.appendChild(panel);
     writeBtn = panel.querySelector('#fba-write');
+    bidBtn = panel.querySelector('#fba-bid');
+    bidBtn.addEventListener('click', onBidClick);
+    setBidReady(false);
 
     panel.querySelector('#fba-copy').addEventListener('click', async () => {
       try {
@@ -415,6 +432,7 @@
     try { await copyText(text); } catch (_) {}
 
     busy = true;
+    setBidReady(false);
     writeBtn.disabled = true;
     writeBtn.textContent = 'Writing…';
     showAlert({ text: 'Sending project to Claude…', spinner: true });
@@ -462,5 +480,5 @@
   }
   sync();
   let lastPath = location.pathname;
-  setInterval(() => { if (location.pathname !== lastPath) { lastPath = location.pathname; sync(); } }, 800);
+  setInterval(() => { if (location.pathname !== lastPath) { lastPath = location.pathname; setBidReady(false); sync(); } }, 800);
 })();

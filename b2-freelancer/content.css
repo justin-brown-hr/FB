@@ -1,5 +1,8 @@
 #fba-panel { position: fixed; right: 18px; top: 76px; z-index: 2147483000; font: 14px system-ui, sans-serif; }
+#fba-panel { display: flex; flex-direction: column; gap: 8px; }
 #fba-panel .fba-btns { display: flex; gap: 8px; }
+#fba-bid { background: #e0107a; width: 100%; }
+#fba-panel #fba-bid:disabled { background: #4a4f5a; color: #9aa0aa; opacity: 1; cursor: not-allowed; box-shadow: none; }
 #fba-panel button { border: 0; border-radius: 6px; padding: 9px 14px; font-weight: 600; cursor: pointer; color: #fff; box-shadow: 0 2px 8px rgba(0,0,0,.35); }
 #fba-panel button:disabled { opacity: .6; cursor: progress; }
 #fba-copy { background: #3a3f4a; }

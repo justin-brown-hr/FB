@@ -59,7 +59,7 @@ Open a project page on freelancer.com and click **Write bid** (top right). A one
 
 - **Success:** the profile matched one of your 6 profiles *and* Claude's reply had a code box. The form is filled, and the alert shows a **Bid** button.
   Clicking **Bid** ticks **SEALED** under Optional Upgrades and clicks **Place Bid**. Nothing else is ticked.
-- **Failed:** there was no code box, or the profile didn't match. The alert lists why. Whatever could be filled is filled, but there's no Bid button, so you place the bid yourself.
+- **Failed:** there was no code box, or the profile didn't match. The alert lists why. Whatever could be filled is filled, but the Bid button stays grey (inactive), so you place the bid yourself.
 
 ## B1 on a VPS, B2 on your PC
 
