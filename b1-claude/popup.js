@@ -1,3 +1,4 @@
+document.getElementById('ver').textContent = 'v' + chrome.runtime.getManifest().version;
 const DEFAULTS = { chatUrl: '', chatName: 'BID', promptTemplate: '{project}', focusTab: false, timeoutSec: 240, relayUrl: '', relayToken: '' };
 const $ = (id) => document.getElementById(id);
 const say = (t, color = '#6fcf97') => { $('msg').style.color = color; $('msg').textContent = t; };

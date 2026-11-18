@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Bid Assistant B1 (Claude)",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Receives Freelancer project details from B2, asks your pinned BID chat on claude.ai, and returns the bid proposal.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAz9yg5Xzp23fQ9VmjZqvvK0o6iozKuulqpkB52YzD19ck8AmUpomLCsLZhnIf5ETKfVgrmVaYW7QCiV+xKimK4FvIxgvocaYGCchSpm7KcbhynZlieUOiqF1RcaQpZ9Y1zrWxElI3IdCuJEUxQdtd57rjg/fpTN71URpVmdQL26H9mHWR8grl7yX8ZcY6mBQfHPLZ4CcW/L5L8Y2BhgyeAnJGHp5TcqVn8fCtCQW/C991JEtQlmQGHLSElWPAlYuhfoIS6I34mQvgRjojT/P4ewx1BjYn8BJXZOsMpEZkiJ6ozMrP0NeCI+WqS1B1AAwej9n5PAhFxSFkLu4tkUfNnQIDAQAB",
   "permissions": [

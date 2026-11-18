@@ -1,3 +1,4 @@
+document.getElementById('ver').textContent = 'v' + chrome.runtime.getManifest().version;
 const $ = (id) => document.getElementById(id);
 
 // "1.2.3.4:8787/TOKEN" or "https://host/TOKEN"  ->  { relayUrl, relayToken }
