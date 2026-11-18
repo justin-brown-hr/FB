@@ -232,7 +232,7 @@
     } else {
       copyText(reply).catch(() => {});
     }
-    return { success: problems.length === 0, filled, problems, parsed: r };
+    return { success: !!(r.profile && r.bid), filled, problems, parsed: r };
   }
 
   // ---------------- place bid ----------------
@@ -305,7 +305,8 @@
 
   // One-line toast at the top center. kind: info | ok | err
   // Progress toasts stay until replaced; others hide by themselves (paused while the mouse is over it).
-  const HIDE_MS = { info: 4000, ok: 5000, err: 8000, bid: 20000 };
+  const HIDE_MS = { info: 4000, ok: 5000, err: 10000, bid: 25000 };
+  const MAX_HIDE_MS = 25000;
 
   function showAlert({ kind = 'info', text, actions = [], autoHide, spinner = false, marquee = false }) {
     if (!alertBox) {
@@ -315,7 +316,7 @@
       alertBox.addEventListener('mouseleave', () => armHide());
       document.body.appendChild(alertBox);
     }
-    const icon = spinner ? '<span class="fba-spin"></span>' : `<span class="fba-icon">${kind === 'ok' ? '✓' : kind === 'err' ? '✕' : 'ℹ'}</span>`;
+    const icon = spinner ? '<span class="fba-spin"></span>' : '';   // no icon: the color shows success / failure
     alertBox.className = kind;
     alertBox.innerHTML = `${icon}<span class="fba-text" title="${esc(text)}"><span class="fba-inner">${esc(text)}</span></span><span class="fba-actions"></span><button type="button" class="fba-x" title="Close">×</button>`;
     const bar = alertBox.querySelector('.fba-actions');
@@ -345,7 +346,7 @@
       style.textContent = `@keyframes fba-marquee { 0%, ${a}% { transform: translateX(0); } ${b}%, 100% { transform: translateX(-${overflow}px); } }`;
       box.classList.add('fba-marquee');
       inner.style.animationDuration = total + 'ms';
-      if (!spinner && autoHide == null) alertBox._hideMs = Math.max(alertBox._hideMs, total * 2 + 1000); // let it scroll twice
+      if (!spinner && autoHide == null) alertBox._hideMs = Math.min(MAX_HIDE_MS, Math.max(alertBox._hideMs, total + 1000)); // one scroll, max 25 s
     }
     armHide();
   }
@@ -361,13 +362,15 @@
 
   function resultAlert(r, reply) {
     if (r.success) {
+      // green: profile · budget · timeline (+ a note if a form field could not be set)
+      const p = r.parsed;
+      const parts = [p.profile.option, p.amount != null ? '$' + p.amount : null, p.days != null ? p.days + (p.days === 1 ? ' day' : ' days') : null].filter(Boolean);
       showAlert({
         kind: 'ok', autoHide: HIDE_MS.bid,
-        text: 'Ready: ' + r.filled.map(([, v]) => v).join(' · '),
+        text: parts.join(' · ') + (r.problems.length ? '  ⚠ ' + r.problems.join(' · ') : ''),
         actions: [{ label: 'Bid', id: 'fba-bid', onClick: onBidClick }]
       });
     } else {
-      // Claude's reply usually says why (e.g. why it did not write a bid), so show it.
       // red alert = failed; the text is just Claude's reply (it explains why)
       showAlert({ kind: 'err', marquee: true, text: oneLine(reply) || r.problems.join(' · ') });
     }
