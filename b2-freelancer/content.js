@@ -368,8 +368,8 @@
       });
     } else {
       // Claude's reply usually says why (e.g. why it did not write a bid), so show it.
-      const why = !r.parsed.bid ? 'No bid' : !r.parsed.profile ? 'Profile not matched' : r.problems[0];
-      showAlert({ kind: 'err', marquee: true, text: `${why} — Claude: ${oneLine(reply)}` });
+      // red alert = failed; the text is just Claude's reply (it explains why)
+      showAlert({ kind: 'err', marquee: true, text: oneLine(reply) || r.problems.join(' · ') });
     }
   }
 
