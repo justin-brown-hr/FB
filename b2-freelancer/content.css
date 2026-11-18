@@ -6,7 +6,7 @@
 #fba-write { background: #139ff0; }
 
 #fba-alert { position: fixed; left: 50%; top: 12px; transform: translateX(-50%); z-index: 2147483001;
-  display: flex; align-items: center; gap: 10px; max-width: min(760px, calc(100vw - 32px)); box-sizing: border-box;
+  display: flex; align-items: center; gap: 10px; width: max-content; max-width: min(760px, calc(100vw - 32px)); box-sizing: border-box;
   padding: 8px 8px 8px 14px; border-radius: 8px; background: #1f2229; color: #e6e6e6;
   font: 14px/1.3 system-ui, sans-serif; box-shadow: 0 6px 24px rgba(0,0,0,.45); border-left: 4px solid #139ff0;
   animation: fba-in .18s ease-out; }
@@ -17,7 +17,11 @@
 #fba-alert.ok .fba-icon { color: #6fcf97; }
 #fba-alert.err .fba-icon { color: #ff8a8a; }
 #fba-alert.info .fba-icon { color: #56b4f0; }
-#fba-alert .fba-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+#fba-alert .fba-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto; }
+#fba-alert .fba-inner { display: inline-block; }
+#fba-alert .fba-text.fba-marquee { text-overflow: clip; }
+#fba-alert .fba-marquee .fba-inner { animation: fba-marquee 10s linear infinite; }
+#fba-alert:hover .fba-marquee .fba-inner { animation-play-state: paused; }
 #fba-alert .fba-actions { display: flex; gap: 6px; flex: none; }
 #fba-alert .fba-actions:empty { display: none; }
 #fba-alert .fba-act { border: 0; border-radius: 6px; padding: 5px 14px; font-weight: 600; cursor: pointer; background: #e0107a; color: #fff; }

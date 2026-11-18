@@ -208,7 +208,7 @@
     const r = P.parseBidResponse(reply);
     const filled = [], problems = [];
 
-    if (!r.bid) problems.push('no code box (reply copied to clipboard)');
+    if (!r.bid) problems.push('no code box');
     if (!r.profile) problems.push(r.profileText ? `profile "${r.profileText}" not matched` : 'no Profile line');
 
     if (r.profile) {
@@ -232,7 +232,7 @@
     } else {
       copyText(reply).catch(() => {});
     }
-    return { success: problems.length === 0, filled, problems };
+    return { success: problems.length === 0, filled, problems, parsed: r };
   }
 
   // ---------------- place bid ----------------
@@ -307,7 +307,7 @@
   // Progress toasts stay until replaced; others hide by themselves (paused while the mouse is over it).
   const HIDE_MS = { info: 4000, ok: 5000, err: 8000, bid: 20000 };
 
-  function showAlert({ kind = 'info', text, actions = [], autoHide, spinner = false }) {
+  function showAlert({ kind = 'info', text, actions = [], autoHide, spinner = false, marquee = false }) {
     if (!alertBox) {
       alertBox = document.createElement('div');
       alertBox.id = 'fba-alert';
@@ -317,7 +317,7 @@
     }
     const icon = spinner ? '<span class="fba-spin"></span>' : `<span class="fba-icon">${kind === 'ok' ? '✓' : kind === 'err' ? '✕' : 'ℹ'}</span>`;
     alertBox.className = kind;
-    alertBox.innerHTML = `${icon}<span class="fba-text" title="${esc(text)}">${esc(text)}</span><span class="fba-actions"></span><button type="button" class="fba-x" title="Close">×</button>`;
+    alertBox.innerHTML = `${icon}<span class="fba-text" title="${esc(text)}"><span class="fba-inner">${esc(text)}</span></span><span class="fba-actions"></span><button type="button" class="fba-x" title="Close">×</button>`;
     const bar = alertBox.querySelector('.fba-actions');
     actions.forEach((a) => {
       const btn = document.createElement('button');
@@ -331,6 +331,22 @@
     alertBox.querySelector('.fba-x').onclick = hideAlert;
     alertBox.style.display = '';
     alertBox._hideMs = spinner ? 0 : (autoHide ?? HIDE_MS[kind] ?? 5000);
+
+    // Text longer than one line: cut it with "…", or scroll it sideways when marquee is on.
+    const box = alertBox.querySelector('.fba-text');
+    const inner = box.firstChild;
+    const overflow = inner.scrollWidth - box.clientWidth;
+    if (marquee && overflow > 0) {
+      const scrollMs = Math.round(overflow / 45 * 1000);      // ~45 px per second
+      const total = scrollMs + 3000;                           // 1.5 s pause at each end
+      const a = (1500 / total * 100).toFixed(2), b = (100 - 1500 / total * 100).toFixed(2);
+      let style = document.getElementById('fba-mq-style');
+      if (!style) { style = document.createElement('style'); style.id = 'fba-mq-style'; document.head.appendChild(style); }
+      style.textContent = `@keyframes fba-marquee { 0%, ${a}% { transform: translateX(0); } ${b}%, 100% { transform: translateX(-${overflow}px); } }`;
+      box.classList.add('fba-marquee');
+      inner.style.animationDuration = total + 'ms';
+      if (!spinner && autoHide == null) alertBox._hideMs = Math.max(alertBox._hideMs, total * 2 + 1000); // let it scroll twice
+    }
     armHide();
   }
   function armHide() {
@@ -340,7 +356,10 @@
   }
   function hideAlert() { if (alertBox) { clearTimeout(alertBox._t); alertBox.style.display = 'none'; } }
 
-  function resultAlert(r) {
+  // Claude's reply as a single line (code-box fences removed).
+  const oneLine = (t) => (t || '').replace(/```[^\n]*\n?/g, ' ').replace(/\s+/g, ' ').trim();
+
+  function resultAlert(r, reply) {
     if (r.success) {
       showAlert({
         kind: 'ok', autoHide: HIDE_MS.bid,
@@ -348,7 +367,9 @@
         actions: [{ label: 'Bid', id: 'fba-bid', onClick: onBidClick }]
       });
     } else {
-      showAlert({ kind: 'err', text: 'Failed: ' + r.problems.join(' · ') });
+      // Claude's reply usually says why (e.g. why it did not write a bid), so show it.
+      const why = !r.parsed.bid ? 'No bid' : !r.parsed.profile ? 'Profile not matched' : r.problems[0];
+      showAlert({ kind: 'err', marquee: true, text: `${why} — Claude: ${oneLine(reply)}` });
     }
   }
 
@@ -421,7 +442,7 @@
       else if (m.type === 'RESULT') {
         gotResult = true;
         fillBidForm(m.bid)
-          .then((r) => { finish(); resultAlert(r); })
+          .then((r) => { finish(); resultAlert(r, m.bid); })
           .catch((e) => fail('Error while filling the form: ' + (e?.message || e)));
       }
     });
