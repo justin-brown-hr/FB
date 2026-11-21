@@ -9,7 +9,7 @@
   // Full profile label (as Claude writes it)  ->  option name in Freelancer's "Select a profile" dropdown
   const PROFILES = [
     { label: 'Software Consultant | Web Platforms • SaaS • AI', option: 'General' },
-    { label: 'iOS & Android Developer | React Native • Flutter', option: 'Mobile' },
+    { label: 'iOS & Android App | React Native • Flutter • SaaS', option: 'Mobile' },
     { label: 'AI Automation Engineer | Chatbots • n8n • GHL', option: 'AI & automation' },
     { label: 'Logo • UI/UX • Illustration • Book Cover • Figma', option: 'Design' },
     { label: '2D/3D CAD | AutoCAD • Civil • Blender 3D Rendering', option: 'CAD' },

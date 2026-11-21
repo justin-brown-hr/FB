@@ -25,7 +25,7 @@ Two Chrome / Edge extensions that work together:
 | Profile in Claude's reply | Option in "Select a profile" |
 |---|---|
 | Software Consultant \| Web Platforms • SaaS • AI | General |
-| iOS & Android Developer \| React Native • Flutter | Mobile |
+| iOS & Android App \| React Native • Flutter • SaaS | Mobile |
 | AI Automation Engineer \| Chatbots • n8n • GHL | AI & automation |
 | Logo • UI/UX • Illustration • Book Cover • Figma | Design |
 | 2D/3D CAD \| AutoCAD • Civil • Blender 3D Rendering | CAD |
