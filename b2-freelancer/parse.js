@@ -22,11 +22,17 @@
   // Best matching profile for a free-text profile string, or null.
   function matchProfile(text) {
     if (!text) return null;
-    const t = norm(text);
+    // ignore the word "profile" ("General profile", "Design profile")
+    const t = norm(text).replace(/\bprofiles?\b/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!t) return null;
     for (const p of PROFILES) {
       if (t === norm(p.label) || t === norm(p.option)) return p;
     }
-    const tt = tokens(text);
+    // short name followed by extra words, e.g. "Design (logo + branding)" or "General - web"
+    for (const p of PROFILES) {
+      if (t.startsWith(norm(p.option) + ' ')) return p;
+    }
+    const tt = new Set(t.split(' '));
     let best = null, bestScore = 0;
     for (const p of PROFILES) {
       const pt = tokens(p.label);
