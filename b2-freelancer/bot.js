@@ -102,9 +102,8 @@ async function api(path) {
 // ---------------- helpers ----------------
 const usd = (amount, currency) => {
   if (amount == null) return null;
-  if (!currency || currency.code === 'USD') return amount;
-  const rate = Number(currency.exchange_rate);
-  return rate > 0 ? amount * rate : null;
+  const rate = toUsdRate(currency && currency.code, currency && currency.exchange_rate);
+  return rate ? amount * rate : null;
 };
 const projectUrl = (p) => 'https://www.freelancer.com/projects/' + (p.seo_url || p.id);
 const countryOf = (users, id) => {
@@ -219,9 +218,10 @@ async function findProjects(cfg) {
     if (p.time_submitted && p.time_submitted * 1000 < botStartedAt - 60000) continue;
     counted++;
     const hourly = p.type === 'hourly';
-    const max = usd(p.budget && (p.budget.maximum || p.budget.minimum), p.currency);
+    const b = apiBudget(p);
+    const max = b.usdMax;
     const min = hourly ? cfg.minHourlyUsd : cfg.minFixedUsd;
-    if (max == null || max <= min) { await log(`Filtered: ${p.title} — budget $${max == null ? '?' : Math.round(max)}${hourly ? '/h' : ''}`); continue; }
+    if (max == null || max <= min) { await log(`Filtered: ${p.title} — budget ${b.text}${hourly ? '/h' : ''} (need over $${min}${hourly ? '/h' : ''})`); continue; }
     const country = countryOf(users, p.owner_id);
     if (country && skip.includes(country.toLowerCase())) { await log(`Filtered: ${p.title} — client from ${country}`); continue; }
     picked.push({ id: p.id, title: p.title, url: projectUrl(p), hourly, usd: Math.round(max), country, posted: p.time_submitted || 0 });
@@ -351,6 +351,57 @@ async function updateBadge() {
   chrome.action.setBadgeBackgroundColor({ color: '#1e8e4e' });
 }
 
+// ---------------- budgets in USD ----------------
+// Freelancer's exchange rate converts the project currency to USD (multiply). Fallback if it is missing.
+const FALLBACK_TO_USD = {
+  USD: 1, AUD: 0.65, CAD: 0.73, EUR: 1.08, GBP: 1.27, NZD: 0.60, SGD: 0.74,
+  INR: 0.012, PKR: 0.0036, HKD: 0.13, JPY: 0.0067, CHF: 1.12, SEK: 0.095,
+  NOK: 0.092, DKK: 0.145, ZAR: 0.055, MXN: 0.055, BRL: 0.18, PHP: 0.017,
+  MYR: 0.22, THB: 0.028, IDR: 0.000063, AED: 0.27, SAR: 0.27
+};
+const num = (v) => { const n = typeof v === 'string' ? parseFloat(v.replace(/[^\d.]/g, '')) : v; return typeof n === 'number' && isFinite(n) && n > 0 ? n : null; };
+
+function toUsdRate(code, given) {
+  code = String(code || 'USD').toUpperCase();
+  if (code === 'USD') return 1;
+  const r = num(given);
+  const fb = FALLBACK_TO_USD[code];
+  if (r && fb && (r > fb * 2 || r < fb / 2)) {        // looks like the inverse (USD -> local)
+    const inv = 1 / r;
+    return inv < fb * 2 && inv > fb / 2 ? inv : fb;
+  }
+  return r || fb || null;
+}
+
+function budgetResult(lo, hi, code, rate) {
+  const fmt = (n) => Math.round(n).toLocaleString('en-US');
+  const usd = (n) => (n != null && rate ? n * rate : null);
+  const top = hi != null ? hi : lo;                  // always judge by the highest amount
+  const text = lo == null && hi == null ? '?' :
+    `${lo != null && hi != null && lo !== hi ? fmt(lo) + '–' + fmt(hi) : fmt(top)} ${code}` +
+    (code !== 'USD' && rate ? ` ≈ $${lo != null && hi != null && lo !== hi ? fmt(usd(lo)) + '–$' + fmt(usd(hi)) : fmt(usd(top))}` : '');
+  return { usdMax: usd(top), text };
+}
+
+// project data from the live feed (fields vary: numbers or text)
+function liveBudget(d) {
+  const cur = d.currency || {};
+  const code = String(cur.code || d.currencyCode || 'USD').toUpperCase();
+  const his = [d.maxbudget, d.max_budget, d.budget && d.budget.maximum].map(num).filter((n) => n != null);
+  const los = [d.minbudget, d.min_budget, d.budget && d.budget.minimum].map(num).filter((n) => n != null);
+  const hi = his.length ? Math.max(...his) : null;
+  const lo = los.length ? Math.min(...los) : null;
+  return budgetResult(lo, hi != null && lo != null && hi < lo ? lo : hi, code, toUsdRate(code, cur.exchangerate != null ? cur.exchangerate : cur.exchange_rate));
+}
+
+// project data from Freelancer's projects API
+function apiBudget(p) {
+  const cur = p.currency || {};
+  const code = String(cur.code || 'USD').toUpperCase();
+  const bud = p.budget || {};
+  return budgetResult(num(bud.minimum), num(bud.maximum), code, toUsdRate(code, cur.exchange_rate));
+}
+
 // ---------------- live mode: Freelancer's real-time notification feed ----------------
 // The same feed freelancer.com uses for "VIEW NEW PROJECTS": wss://notifications.freelancer.com
 // It is opened inside a freelancer.com tab (content.js) with your login, subscribed to your skills,
@@ -452,13 +503,19 @@ async function onLiveProject(d) {
   if (d.time_submitted && d.time_submitted * 1000 < botStartedAt - 60000) return; // posted before Start
 
   const title = d.title || ('Project ' + d.id);
-  const hourly = d.projIsHourly === true || d.projIsHourly === 1 || /hour/i.test(String(d.type || ''));
-  const code = String((d.currency && d.currency.code) || d.currencyCode || 'USD').toUpperCase();
-  const rate = code === 'USD' ? 1 : parseFloat(d.currency && (d.currency.exchangerate || d.currency.exchange_rate));
-  const raw = [d.maxbudget, d.max_budget, d.budget && d.budget.maximum, d.minbudget, d.budget && d.budget.minimum].find((n) => typeof n === 'number' && isFinite(n));
-  const max = raw != null && rate > 0 ? raw * rate : null;
+  const hourly = d.projIsHourly === true || d.projIsHourly === 1 || d.projIsHourly === '1' || /hour/i.test(String(d.type || ''));
+  let b = liveBudget(d);
   const min = hourly ? cfg.minHourlyUsd : cfg.minFixedUsd;
-  if (max == null || max <= min) { await log(`Filtered: ${title} — budget ${max == null ? '?' : '$' + Math.round(max)}${hourly ? '/h' : ''}`); return; }
+  if (b.usdMax == null || b.usdMax <= min) {
+    // looks too low (or unreadable): check the project's own data before skipping it
+    try {
+      const r = await api(`/api/projects/0.1/projects/?projects[]=${d.id}&compact=true`);
+      const p = ((r.result && r.result.projects) || [])[0];
+      if (p) b = apiBudget(p);
+    } catch (_) {}
+  }
+  const max = b.usdMax;
+  if (max == null || max <= min) { await log(`Filtered: ${title} — budget ${b.text}${hourly ? '/h' : ''} (need over $${min}${hourly ? '/h' : ''})`); return; }
 
   const skip = cfg.skipCountries.split(',').map((c) => c.trim().toLowerCase()).filter(Boolean);
   let country = d.userId ? await countryOfUser(d.userId) : '';
