@@ -92,8 +92,6 @@ Advanced: the relay uses plain HTTP. For HTTPS, put it behind your own domain (e
   The toolbar icon shows **ON** while the bot runs.
 - **Message alerts (MMS)**: new messages in your chats go to Telegram with the project title, the client's username and the message.
   Messages from usernames containing "recruiter" are ignored. MMS needs the Telegram bot token and chat ID to be set.
-  Message alerts run 24/7 while they are switched on, whether the bot is started or stopped (Chrome must stay open and logged in to Freelancer).
-  The live feed stays connected for instant chat alerts, with a backup check about once a minute.
 - **Bot log**: what the bot did and any errors. Use **Copy log** to send it for troubleshooting.
 
 ## Troubleshooting
