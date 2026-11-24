@@ -270,7 +270,7 @@ async function poll(opts = {}) {
   try {
     const cfg = await settings();
     const wantProjects = cfg.botOn && (cfg.detectMode === 'timer' || opts.projects);
-    if (cfg.mmsOn && (opts.messagesNow || Date.now() - lastMms >= (cfg.detectMode === 'live' ? 55000 : 15000))) {
+    if (cfg.mmsOn && (opts.messagesNow || Date.now() - lastMms >= (liveState === 'live' ? 55000 : 15000))) {
       lastMms = Date.now();
       try { await checkMessages(); } catch (e) { await setStatus('mms', '✗ ' + e.message); await log('MMS error: ' + e.message); }
     }
@@ -378,7 +378,8 @@ async function jobIdsFor(cfg) {
 let liveState = 'off', liveLastProject = 0, liveStarting = false;
 
 async function liveStatus() {
-  const parts = [`live feed: ${liveState}`];
+  const { botOn } = await getBot();
+  const parts = [`live feed: ${liveState}${botOn ? '' : ' (bot stopped: messages only)'}`];
   if (liveLastProject) parts.push(`last new project ${new Date(liveLastProject).toLocaleTimeString()}`);
   await setStatus('find', parts.join(' — '));
 }
@@ -465,11 +466,17 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg?.type === 'FBA_WS_MESSAGE') { poll({ messagesNow: true }); return; } // a chat event: check messages now
 });
 
+// Runs every 30 s, whether the bot is on or off.
+// Message alerts (MMS) run 24/7 while they are switched on: the live feed stays connected for chat events
+// even when the bot is stopped (new projects are then ignored), with a backup message check about every minute.
 async function heartbeat() {
   const cfg = await settings();
-  if (cfg.mmsOn) poll(); // messages: backup check (live feed also triggers it on chat events)
+  const feedWanted = cfg.mmsOn || (cfg.botOn && cfg.detectMode === 'live');
+  if (feedWanted) { await liveMode(cfg); await liveStatus(); }
+  else if (liveState !== 'off') await liveStop();
+  if (cfg.mmsOn) poll(); // messages: backup check (the live feed also triggers it on chat events)
   if (!cfg.botOn) return;
-  if (cfg.detectMode === 'live') { await liveMode(cfg); work(); } else loop();
+  if (cfg.detectMode === 'live') work(); else loop();
 }
 
 chrome.alarms.create('fba-bot', { periodInMinutes: 0.5 });
@@ -478,11 +485,11 @@ chrome.storage.onChanged.addListener(async (c, area) => {
   if (area !== 'sync') return;
   if (c.botOn) {
     if (c.botOn.newValue) { await setLocal({ botStartedAt: Date.now(), botBaseline: false, botStack: [] }); await setStatus('stack', '0 waiting'); await log('Bot started'); heartbeat(); }
-    else { await log('Bot stopped'); liveStop(); }
+    else { await log('Bot stopped' + ((await settings()).mmsOn ? ' (message alerts keep running)' : '')); heartbeat(); }
     updateBadge();
   }
   if (c.detectMode || c.watchUrl) { await liveStop(); heartbeat(); }
-  else if (c.mmsOn && c.mmsOn.newValue) heartbeat();
+  else if (c.mmsOn) heartbeat();
 });
 chrome.runtime.onStartup.addListener(() => { updateBadge(); heartbeat(); });
 updateBadge();
