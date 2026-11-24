@@ -14,7 +14,9 @@ const BOT_DEFAULTS = {
   pauseMin: 2,           // seconds between actions (random in [min, max])
   pauseMax: 5,
   maxAgeMin: 30,         // ignore projects posted longer ago than this
-  checkEverySec: 5       // how often to look for new projects
+  checkEverySec: 5,      // timer mode: how often to look for new projects
+  detectMode: 'live',    // 'live' = Freelancer's real-time feed (no timer), 'timer' = check every N s
+  watchUrl: 'https://www.freelancer.com/search/projects'
 };
 const getBot = () => chrome.storage.sync.get(BOT_DEFAULTS);
 const local = (k) => chrome.storage.local.get(k);
@@ -99,7 +101,16 @@ let polling = false, bidding = false;
 Object.defineProperty(globalThis, 'busy', { get: () => polling || bidding }); // used by tests
 
 // ---------------- stack (saved, so nothing is lost if the browser restarts) ----------------
-async function stackPush(items) {
+// Stack and seen-list updates run one at a time, so projects arriving together can't overwrite each other.
+let lockChain = Promise.resolve();
+function locked(fn) {
+  const run = lockChain.then(fn, fn);
+  lockChain = run.catch(() => {});
+  return run;
+}
+
+function stackPush(items) { return locked(() => stackPushNow(items)); }
+async function stackPushNow(items) {
   if (!items.length) return;
   const { botStack = [] } = await local('botStack');
   const have = new Set(botStack.map((p) => p.id));
@@ -108,7 +119,8 @@ async function stackPush(items) {
   await setLocal({ botStack });
   await log(`Stack +${items.length} → ${botStack.length} waiting`);
 }
-async function stackPop() {
+function stackPop() { return locked(stackPopNow); }
+async function stackPopNow() {
   const { botStack = [] } = await local('botStack');
   const p = botStack.pop();            // newest on top
   await setLocal({ botStack });
@@ -252,16 +264,17 @@ async function settings() {
 }
 
 // checker: messages + new projects -> stack
-async function poll() {
+async function poll(opts = {}) {
   if (polling) return;
   polling = true;
   try {
     const cfg = await settings();
-    if (cfg.mmsOn && Date.now() - lastMms >= 15000) {
+    const wantProjects = cfg.botOn && (cfg.detectMode === 'timer' || opts.projects);
+    if (cfg.mmsOn && (opts.messagesNow || Date.now() - lastMms >= (cfg.detectMode === 'live' ? 55000 : 15000))) {
       lastMms = Date.now();
       try { await checkMessages(); } catch (e) { await setStatus('mms', '✗ ' + e.message); await log('MMS error: ' + e.message); }
     }
-    if (cfg.botOn) {
+    if (wantProjects) {
       try { await stackPush(await findProjects(cfg)); } catch (e) { await setStatus('find', '✗ ' + e.message); await log('Project search error: ' + e.message); }
     }
   } finally {
@@ -306,7 +319,7 @@ async function loop() {
   try {
     while (true) {
       const cfg = await settings();
-      if (!cfg.botOn && !cfg.mmsOn) break;
+      if (!cfg.botOn || cfg.detectMode !== 'timer') break; // live mode: no timer for projects
       await tick();
       await wait(Math.max(3, Number(cfg.botOn ? cfg.checkEverySec : 15) || 5) * 1000);
     }
@@ -321,17 +334,156 @@ async function updateBadge() {
   chrome.action.setBadgeBackgroundColor({ color: '#1e8e4e' });
 }
 
+// ---------------- live mode: Freelancer's real-time notification feed ----------------
+// The same feed freelancer.com uses for "VIEW NEW PROJECTS": wss://notifications.freelancer.com
+// It is opened inside a freelancer.com tab (content.js) with your login, subscribed to your skills,
+// and pushes every new project as a "projectSearchActive" message — no timer.
+const ISO_COUNTRY = { IN: 'India', PK: 'Pakistan', BD: 'Bangladesh', ID: 'Indonesia', US: 'United States', GB: 'United Kingdom', CA: 'Canada', AU: 'Australia', DE: 'Germany', AE: 'United Arab Emirates', PH: 'Philippines', NG: 'Nigeria', EG: 'Egypt', NP: 'Nepal', LK: 'Sri Lanka' };
+
+async function watchTab(cfg) {
+  const want = (cfg.watchUrl || BOT_DEFAULTS.watchUrl).split(/[?#]/)[0].replace(/\/$/, '');
+  const { watchTabId } = await local('watchTabId');
+  const isWatch = (t) => t && (t.url || t.pendingUrl || '').split(/[?#]/)[0].replace(/\/$/, '') === want;
+  if (watchTabId) { try { const t = await chrome.tabs.get(watchTabId); if (isWatch(t)) return t; } catch (_) {} }
+  let t = (await chrome.tabs.query({ url: 'https://www.freelancer.com/*' })).find(isWatch);
+  if (!t) {
+    t = await chrome.tabs.create({ url: cfg.watchUrl || BOT_DEFAULTS.watchUrl, active: false });
+    await log('Opened a Freelancer search tab for the live feed (keep it open)');
+    await tabLoaded(t.id);
+  }
+  await setLocal({ watchTabId: t.id });
+  return t;
+}
+
+async function freelancerAuth() {
+  const get = (name) => chrome.cookies.get({ url: 'https://www.freelancer.com', name });
+  const [h, u] = await Promise.all([get('GETAFREE_AUTH_HASH_V2'), get('GETAFREE_USER_ID')]);
+  if (!h || !u) throw new Error('Not logged in to freelancer.com in this Chrome.');
+  return { hash2: decodeURIComponent(h.value), userId: Number(u.value) };
+}
+
+// skills to listen to: projectSkills=… in the search URL, else the skills on your profile
+async function jobIdsFor(cfg) {
+  const m = (cfg.watchUrl || '').match(/[?&]projectSkills=([\d,%C]+)/i);
+  if (m) {
+    const ids = decodeURIComponent(m[1]).split(',').map(Number).filter(Boolean);
+    if (ids.length) return ids;
+  }
+  const r = await api('/api/users/0.1/self/?jobs=true');
+  const ids = ((r.result && r.result.jobs) || []).map((j) => j.id).filter(Boolean);
+  if (!ids.length) throw new Error('No skills found: add skills to your profile or put projectSkills=… in the search URL.');
+  return ids;
+}
+
+let liveState = 'off', liveLastProject = 0, liveStarting = false;
+
+async function liveStatus() {
+  const parts = [`live feed: ${liveState}`];
+  if (liveLastProject) parts.push(`last new project ${new Date(liveLastProject).toLocaleTimeString()}`);
+  await setStatus('find', parts.join(' — '));
+}
+
+async function liveMode(cfg) {
+  if (liveStarting) return;
+  liveStarting = true;
+  try {
+    const t = await watchTab(cfg);
+    await tabReady(t.id);
+    const st = await chrome.tabs.sendMessage(t.id, { type: 'FBA_WS_STATE' }).catch(() => null);
+    if (st && (st.state === 'live' || st.state === 'connecting' || st.state === 'authenticating')) return;
+    const auth = await freelancerAuth();
+    const jobIds = await jobIdsFor(cfg);
+    await chrome.tabs.sendMessage(t.id, { type: 'FBA_WS_START', ...auth, jobIds });
+    await log(`Live feed: connecting (${jobIds.length} skills)`);
+  } catch (e) {
+    liveState = '✗ ' + e.message;
+    await liveStatus();
+    await log('Live feed error: ' + e.message);
+  } finally {
+    liveStarting = false;
+  }
+}
+
+async function liveStop() {
+  const { watchTabId } = await local('watchTabId');
+  if (watchTabId) chrome.tabs.sendMessage(watchTabId, { type: 'FBA_WS_STOP' }).catch(() => {});
+  liveState = 'off';
+}
+
+async function countryOfUser(userId) {
+  try {
+    const r = await api(`/api/users/0.1/users/?users[]=${userId}&user_details=true&user_location_details=true&compact=true`);
+    const u = Object.values((r.result && r.result.users) || {})[0];
+    const c = u && u.location && u.location.country;
+    return (c && (c.name || ISO_COUNTRY[(c.code || '').toUpperCase()])) || '';
+  } catch (_) { return ''; }
+}
+
+async function onLiveProject(d) {
+  const cfg = await settings();
+  if (!cfg.botOn || cfg.detectMode !== 'live' || !d || !d.id) return;
+  liveLastProject = Date.now();
+  const { botStartedAt = Date.now() } = await local('botStartedAt');
+  const isNew = await locked(async () => {
+    const { botSeen = [] } = await local('botSeen');
+    if (botSeen.includes(d.id)) return false;
+    await setLocal({ botSeen: [...botSeen, d.id].slice(-3000) });
+    return true;
+  });
+  if (!isNew) return;
+  await liveStatus();
+  if (d.time_submitted && d.time_submitted * 1000 < botStartedAt - 60000) return; // posted before Start
+
+  const title = d.title || ('Project ' + d.id);
+  const hourly = d.projIsHourly === true || d.projIsHourly === 1 || /hour/i.test(String(d.type || ''));
+  const code = String((d.currency && d.currency.code) || d.currencyCode || 'USD').toUpperCase();
+  const rate = code === 'USD' ? 1 : parseFloat(d.currency && (d.currency.exchangerate || d.currency.exchange_rate));
+  const raw = [d.maxbudget, d.max_budget, d.budget && d.budget.maximum, d.minbudget, d.budget && d.budget.minimum].find((n) => typeof n === 'number' && isFinite(n));
+  const max = raw != null && rate > 0 ? raw * rate : null;
+  const min = hourly ? cfg.minHourlyUsd : cfg.minFixedUsd;
+  if (max == null || max <= min) { await log(`Filtered: ${title} — budget ${max == null ? '?' : '$' + Math.round(max)}${hourly ? '/h' : ''}`); return; }
+
+  const skip = cfg.skipCountries.split(',').map((c) => c.trim().toLowerCase()).filter(Boolean);
+  let country = d.userId ? await countryOfUser(d.userId) : '';
+  if (!country) country = ISO_COUNTRY[String((d.currency && d.currency.country) || '').toUpperCase()] || '';
+  if (country && skip.includes(country.toLowerCase())) { await log(`Filtered: ${title} — client from ${country}`); return; }
+
+  const seo = String(d.seo_url || d.id);
+  const url = seo.startsWith('http') ? seo : 'https://www.freelancer.com/projects/' + seo;
+  await stackPush([{ id: d.id, title, url, hourly, usd: Math.round(max), country, posted: d.time_submitted || Math.floor(Date.now() / 1000) }]);
+  work();
+}
+
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg?.type === 'FBA_WS_PROJECT') { onLiveProject(msg.data); return; }
+  if (msg?.type === 'FBA_WS_STATE_CHANGED') {
+    liveState = msg.state;
+    liveStatus();
+    if (msg.state === 'live') log('Live feed: connected, waiting for new projects');
+    return;
+  }
+  if (msg?.type === 'FBA_WS_MESSAGE') { poll({ messagesNow: true }); return; } // a chat event: check messages now
+});
+
+async function heartbeat() {
+  const cfg = await settings();
+  if (cfg.mmsOn) poll(); // messages: backup check (live feed also triggers it on chat events)
+  if (!cfg.botOn) return;
+  if (cfg.detectMode === 'live') { await liveMode(cfg); work(); } else loop();
+}
+
 chrome.alarms.create('fba-bot', { periodInMinutes: 0.5 });
-chrome.alarms.onAlarm.addListener((a) => { if (a.name === 'fba-bot') loop(); });
+chrome.alarms.onAlarm.addListener((a) => { if (a.name === 'fba-bot') heartbeat(); });
 chrome.storage.onChanged.addListener(async (c, area) => {
   if (area !== 'sync') return;
   if (c.botOn) {
-    if (c.botOn.newValue) { await setLocal({ botStartedAt: Date.now(), botBaseline: false, botStack: [] }); await setStatus('stack', '0 waiting'); await log('Bot started'); loop(); }
-    else await log('Bot stopped');
+    if (c.botOn.newValue) { await setLocal({ botStartedAt: Date.now(), botBaseline: false, botStack: [] }); await setStatus('stack', '0 waiting'); await log('Bot started'); heartbeat(); }
+    else { await log('Bot stopped'); liveStop(); }
     updateBadge();
   }
-  if (c.mmsOn && c.mmsOn.newValue) loop();
+  if (c.detectMode || c.watchUrl) { await liveStop(); heartbeat(); }
+  else if (c.mmsOn && c.mmsOn.newValue) heartbeat();
 });
-chrome.runtime.onStartup.addListener(() => { updateBadge(); loop(); });
+chrome.runtime.onStartup.addListener(() => { updateBadge(); heartbeat(); });
 updateBadge();
-loop();
+heartbeat();

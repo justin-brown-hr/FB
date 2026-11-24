@@ -563,6 +563,72 @@
     if (msg?.type === 'FBA_AUTO_BID') { autoBid(msg.opts || {}).then(sendResponse, (e) => sendResponse({ ok: false, reason: String(e?.message || e) })); return true; }
   });
 
+  // ---------------- live feed: Freelancer's real-time notifications (SockJS over WebSocket) ----------------
+  // Opened from this freelancer.com tab, like the website does. Started/stopped by bot.js.
+  let ws = null, wsCfg = null, wsState = 'off', wsSubscribedAt = 0, wsAuthTimer = null;
+  const wsSetState = (st) => { wsState = st; chrome.runtime.sendMessage({ type: 'FBA_WS_STATE_CHANGED', state: st }).catch(() => {}); };
+  const wsSend = (o) => { if (ws && ws.readyState === 1) ws.send(JSON.stringify([JSON.stringify(o)])); };
+  const wsSubscribe = () => {
+    clearTimeout(wsAuthTimer);
+    wsSend({ channel: 'channels', body: { channels: wsCfg.jobIds } });
+    wsSubscribedAt = Date.now();
+    wsSetState('live');
+  };
+
+  function wsConnect() {
+    if (!wsCfg) return;
+    const session = Math.random().toString(36).slice(2, 10);
+    const server = String(Math.floor(Math.random() * 999)).padStart(3, '0');
+    ws = new WebSocket(`wss://notifications.freelancer.com/${server}/${session}/websocket`);
+    wsSetState('connecting');
+    ws.onmessage = (ev) => {
+      const raw = String(ev.data);
+      if (raw === 'o') {                    // SockJS open -> log in with this account
+        wsSend({ channel: 'auth', body: { hash2: wsCfg.hash2, user_id: wsCfg.userId } });
+        wsSetState('authenticating');
+        wsAuthTimer = setTimeout(wsSubscribe, 30000); // no OK in time: subscribe anyway
+        return;
+      }
+      if (raw[0] !== 'a') return;           // 'h' = heartbeat
+      let list; try { list = JSON.parse(raw.slice(1)); } catch (_) { return; }
+      for (const item of list) {
+        let m; try { m = JSON.parse(item); } catch (_) { continue; }
+        if (m.channel === 'subscribe' && m.body && m.body.body === 'OK') { wsSubscribe(); continue; }
+        if (m.channel !== 'user' || !m.body) continue;
+        const type = String(m.body.type || '');
+        if (type === 'projectSearchActive' && m.body.data && m.body.data.id) {
+          if (Date.now() - wsSubscribedAt < 3000) continue; // first batch right after subscribing = not new
+          chrome.runtime.sendMessage({ type: 'FBA_WS_PROJECT', data: m.body.data }).catch(() => {});
+        } else if (/message|thread|chat/i.test(type)) {
+          chrome.runtime.sendMessage({ type: 'FBA_WS_MESSAGE', kind: type }).catch(() => {});
+        }
+      }
+    };
+    ws.onclose = () => {
+      clearTimeout(wsAuthTimer);
+      ws = null;
+      if (!wsCfg) { wsSetState('off'); return; }
+      wsSetState('reconnecting');
+      setTimeout(wsConnect, 5000);
+    };
+  }
+
+  chrome.runtime.onMessage.addListener((msg, _s, sendResponse) => {
+    if (msg?.type === 'FBA_WS_STATE') { sendResponse({ state: wsState }); return; }
+    if (msg?.type === 'FBA_WS_START') {
+      wsCfg = { hash2: msg.hash2, userId: msg.userId, jobIds: msg.jobIds || [] };
+      if (ws) { try { ws.close(); } catch (_) {} } else wsConnect();
+      sendResponse({ ok: true });
+      return;
+    }
+    if (msg?.type === 'FBA_WS_STOP') {
+      wsCfg = null;
+      if (ws) { try { ws.close(); } catch (_) {} }
+      wsSetState('off');
+      sendResponse({ ok: true });
+    }
+  });
+
   // Freelancer is a single-page app: show the panel only on project pages.
   function sync() {
     const show = isProjectPage();

@@ -78,10 +78,13 @@ Advanced: the relay uses plain HTTP. For HTTPS, put it behind your own domain (e
 
 ## Auto bot and message alerts (B2 popup)
 
-- **Start bot / Stop bot**: every 5 s (set in *Bot settings*, minimum 3 s) the bot checks new projects through Freelancer's own data API, using an open Freelancer tab (it opens a normal one if none is open). It only bids on projects posted after you click Start. Each bid happens in a new tab that is closed when the bid is done.
-  It keeps projects that match the filters:
+- **Start bot / Stop bot**: the bot listens to Freelancer's **live feed**, the same real-time channel freelancer.com uses for its "VIEW NEW PROJECTS" button
+  (`wss://notifications.freelancer.com`, logged in with your session and subscribed to your skills). New projects arrive the moment they're posted. There's no timer and no repeated list requests.
+  The skills come from the **Search page** in *Bot settings* (`…/search/projects?projectSkills=3,9,…`), or from your profile if the URL has none. That page stays open in a tab, so keep it open.
+  It keeps projects posted after Start that match the filters:
   - fixed budget over $260, or hourly rate over $16 (other currencies are converted to USD);
-  - client not from India, Pakistan, Bangladesh or Indonesia.
+  - client not from India, Pakistan, Bangladesh or Indonesia (checked through Freelancer's user data, and again on the project page).
+  *Bot settings → Find new projects by → Checking on a timer* is still available as a fallback.
   Matches go onto a **stack** (saved, so a browser restart doesn't lose it). Checking continues while a bid is running, so new posts aren't missed.
   The bidder always takes the **newest** project from the top (last in, first out) and removes it from the stack. The popup shows how many are waiting.
   For each project it opens the page, runs **Write bid**, and if that succeeds clicks **Bid**: it ticks SEALED when the project has it, otherwise it just places the bid.
