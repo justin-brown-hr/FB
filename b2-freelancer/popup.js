@@ -140,9 +140,10 @@ $('botSave').onclick = async () => {
 };
 
 async function refreshBotInfo() {
-  const l = await chrome.storage.local.get(['botLog', 'status_find', 'status_mms']);
+  const l = await chrome.storage.local.get(['botLog', 'status_find', 'status_mms', 'status_stack']);
   const lines = [];
   if (l.status_find) lines.push('Projects: ' + l.status_find);
+  if (l.status_stack) lines.push('Stack: ' + l.status_stack);
   if (l.status_mms) lines.push('Messages: ' + l.status_mms);
   $('botStatus').textContent = lines.join('\n');
   const text = (l.botLog || []).slice().reverse().join('\n');

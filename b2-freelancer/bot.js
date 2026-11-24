@@ -91,7 +91,28 @@ const countryOf = (users, id) => {
   const u = users && (users[id] || users[String(id)]);
   return (u && u.location && u.location.country && u.location.country.name) || '';
 };
-let busy = false;
+// Two jobs run side by side:
+//   checker: finds new projects every 30 s (also while a bid is running) and PUSHES them on a stack
+//   bidder:  POPS the newest project from the stack (last in, first out), removes it, bids, repeats
+let polling = false, bidding = false;
+Object.defineProperty(globalThis, 'busy', { get: () => polling || bidding }); // used by tests
+
+// ---------------- stack (saved, so nothing is lost if the browser restarts) ----------------
+async function stackPush(items) {
+  if (!items.length) return;
+  const { botStack = [] } = await local('botStack');
+  const have = new Set(botStack.map((p) => p.id));
+  items.slice().sort((x, y) => x.posted - y.posted)        // oldest first, so the newest ends on top
+    .forEach((p) => { if (!have.has(p.id)) botStack.push(p); });
+  await setLocal({ botStack });
+  await log(`Stack +${items.length} → ${botStack.length} waiting`);
+}
+async function stackPop() {
+  const { botStack = [] } = await local('botStack');
+  const p = botStack.pop();            // newest on top
+  await setLocal({ botStack });
+  return { p, left: botStack.length };
+}
 
 // ---------------- MMS: new client messages -> Telegram ----------------
 async function checkMessages() {
@@ -173,7 +194,7 @@ async function findProjects(cfg) {
     if (max == null || max <= min) { await log(`Filtered: ${p.title} — budget $${max == null ? '?' : Math.round(max)}${hourly ? '/h' : ''}`); continue; }
     const country = countryOf(users, p.owner_id);
     if (country && skip.includes(country.toLowerCase())) { await log(`Filtered: ${p.title} — client from ${country}`); continue; }
-    picked.push({ id: p.id, title: p.title, url: projectUrl(p), hourly, usd: Math.round(max), country });
+    picked.push({ id: p.id, title: p.title, url: projectUrl(p), hourly, usd: Math.round(max), country, posted: p.time_submitted || 0 });
   }
   await setLocal({ botSeen: [...seen].slice(-3000) });
   await setStatus('find', `${counted} new since start, ${picked.length} matched — last check ${new Date().toLocaleTimeString()}`);
@@ -221,31 +242,55 @@ function closeTab(id) {
   chrome.tabs.remove(id).catch(() => {});
 }
 
-// ---------------- main tick ----------------
-async function tick() {
-  if (busy) return;
+// ---------------- jobs ----------------
+async function settings() {
   const cfg = await getBot();
   const { tgToken, tgChatId } = await chrome.storage.sync.get({ tgToken: '', tgChatId: '' });
   cfg.mmsOn = cfg.mmsOn && !!(tgToken && tgChatId); // message alerts need Telegram
-  if (!cfg.botOn && !cfg.mmsOn) return;
-  busy = true;
+  return cfg;
+}
+
+// checker: messages + new projects -> stack
+async function poll() {
+  if (polling) return;
+  polling = true;
   try {
+    const cfg = await settings();
     if (cfg.mmsOn) {
       try { await checkMessages(); } catch (e) { await setStatus('mms', '✗ ' + e.message); await log('MMS error: ' + e.message); }
     }
     if (cfg.botOn) {
-      let list = [];
-      try { list = await findProjects(cfg); } catch (e) { await setStatus('find', '✗ ' + e.message); await log('Project search error: ' + e.message); }
-      for (const p of list) {
-        if (!(await getBot()).botOn) break; // stopped
-        try { await bidOn(p, cfg); } catch (e) { await log(`Error on ${p.title}: ${e.message}`); await tgSend(`❌ Bid failed: ${p.title}\n${e.message}\n${p.url}`); }
-        if (cfg.mmsOn) { try { await checkMessages(); } catch (_) {} }
-        await wait((cfg.pauseMin + Math.random() * Math.max(0, cfg.pauseMax - cfg.pauseMin)) * 1000);
-      }
+      try { await stackPush(await findProjects(cfg)); } catch (e) { await setStatus('find', '✗ ' + e.message); await log('Project search error: ' + e.message); }
     }
   } finally {
-    busy = false;
+    polling = false;
   }
+}
+
+// bidder: pop newest, bid, repeat until the stack is empty or the bot is stopped
+async function work() {
+  if (bidding) return;
+  bidding = true;
+  try {
+    while (true) {
+      const cfg = await settings();
+      if (!cfg.botOn) break;
+      const { p, left } = await stackPop();
+      if (!p) break;
+      await setStatus('stack', `${left} waiting`);
+      try { await bidOn(p, cfg); } catch (e) { await log(`Error on ${p.title}: ${e.message}`); await tgSend(`❌ Bid failed: ${p.title}\n${e.message}\n${p.url}`); }
+      await wait((cfg.pauseMin + Math.random() * Math.max(0, cfg.pauseMax - cfg.pauseMin)) * 1000);
+    }
+  } finally {
+    bidding = false;
+    const { botStack = [] } = await local('botStack');
+    await setStatus('stack', `${botStack.length} waiting`);
+  }
+}
+
+async function tick() {
+  await poll();
+  work(); // not awaited: bidding runs while the next checks keep filling the stack
 }
 
 async function updateBadge() {
@@ -259,7 +304,7 @@ chrome.alarms.onAlarm.addListener((a) => { if (a.name === 'fba-bot') tick(); });
 chrome.storage.onChanged.addListener(async (c, area) => {
   if (area !== 'sync') return;
   if (c.botOn) {
-    if (c.botOn.newValue) { await setLocal({ botStartedAt: Date.now(), botBaseline: false }); await log('Bot started'); tick(); }
+    if (c.botOn.newValue) { await setLocal({ botStartedAt: Date.now(), botBaseline: false, botStack: [] }); await setStatus('stack', '0 waiting'); await log('Bot started'); tick(); }
     else await log('Bot stopped');
     updateBadge();
   }

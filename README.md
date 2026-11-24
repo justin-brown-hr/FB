@@ -82,7 +82,9 @@ Advanced: the relay uses plain HTTP. For HTTPS, put it behind your own domain (e
   It keeps projects that match the filters:
   - fixed budget over $260, or hourly rate over $16 (other currencies are converted to USD);
   - client not from India, Pakistan, Bangladesh or Indonesia.
-  For each match it opens the project, runs **Write bid**, and if that succeeds clicks **Bid**: it ticks SEALED when the project has it, otherwise it just places the bid.
+  Matches go onto a **stack** (saved, so a browser restart doesn't lose it). Checking continues while a bid is running, so new posts aren't missed.
+  The bidder always takes the **newest** project from the top (last in, first out) and removes it from the stack. The popup shows how many are waiting.
+  For each project it opens the page, runs **Write bid**, and if that succeeds clicks **Bid**: it ticks SEALED when the project has it, otherwise it just places the bid.
   Each step waits a random 2–5 s (set this in *Bot settings*). Every result goes to Telegram: `✅ Bid placed …` or `❌ Bid failed … reason`.
   The toolbar icon shows **ON** while the bot runs.
 - **Message alerts (MMS)**: new messages in your chats go to Telegram with the project title, the client's username and the message.
