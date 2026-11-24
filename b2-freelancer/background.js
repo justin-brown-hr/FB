@@ -132,3 +132,25 @@ chrome.runtime.onConnect.addListener(async (pagePort) => {
 
   pending.splice(0).forEach((m) => { try { b1.postMessage(m); } catch (_) {} });
 });
+
+// ---------------- Telegram ----------------
+async function tgSend(text) {
+  const { tgToken, tgChatId } = await chrome.storage.sync.get({ tgToken: '', tgChatId: '' });
+  if (!tgToken || !tgChatId) return { ok: false, error: 'Telegram is not set up (bot token / chat ID in the B2 popup).' };
+  try {
+    const r = await (await fetch(`https://api.telegram.org/bot${tgToken}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: tgChatId, text: text.slice(0, 4000), disable_web_page_preview: true })
+    })).json();
+    return r.ok ? { ok: true } : { ok: false, error: 'Telegram: ' + (r.description || 'error') };
+  } catch (e) {
+    return { ok: false, error: 'Telegram: ' + (e.message || e) };
+  }
+}
+
+chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg?.type !== 'TG_SEND') return;
+  tgSend(String(msg.text || '')).then(sendResponse);
+  return true;
+});

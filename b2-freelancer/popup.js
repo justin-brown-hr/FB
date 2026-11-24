@@ -51,3 +51,61 @@ document.getElementById('check').onclick = async () => {
   });
   port.postMessage({ type: 'DIAG' });
 };
+
+
+// ---------------- Telegram ----------------
+chrome.storage.sync.get({ tgToken: '', tgChatId: '' }).then((s) => { $('tgToken').value = s.tgToken; $('tgChat').value = s.tgChatId; });
+const tgSay = (t) => { $('tgOut').textContent = t; };
+
+$('tgFind').onclick = async () => {
+  const token = $('tgToken').value.trim();
+  if (!token) return tgSay('✗ Paste the bot token first.');
+  try {
+    const r = await (await fetch(`https://api.telegram.org/bot${token}/getUpdates`)).json();
+    if (!r.ok) return tgSay('✗ Telegram: ' + (r.description || 'error') + ' (check the token)');
+    const chats = r.result.map((u) => (u.message || u.channel_post || u.my_chat_member || {}).chat).filter(Boolean);
+    if (!chats.length) return tgSay('✗ No messages yet. Open your bot in Telegram, send it /start, then click Find again.');
+    const c = chats[chats.length - 1];
+    $('tgChat').value = String(c.id);
+    tgSay(`✓ Found: ${c.title || [c.first_name, c.last_name].filter(Boolean).join(' ') || c.username} (${c.id})`);
+  } catch (e) { tgSay('✗ ' + (e.message || e)); }
+};
+
+$('tgSave').onclick = async () => {
+  await chrome.storage.sync.set({ tgToken: $('tgToken').value.trim(), tgChatId: $('tgChat').value.trim() });
+  tgSay('Sending test…');
+  const r = await chrome.runtime.sendMessage({ type: 'TG_SEND', text: '✅ Bid Assistant B2 is connected to Telegram.' });
+  tgSay(r?.ok ? '✓ Saved. Test message sent — check Telegram.' : '✗ ' + (r?.error || 'failed'));
+};
+
+// ---------------- page capture ----------------
+$('capture').onclick = async () => {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!/^https:\/\/(www\.)?freelancer\./.test(tab?.url || '')) { $('out').textContent = '✗ Open a freelancer.com page first.'; return; }
+  const [res] = await chrome.scripting.executeScript({
+    target: { tabId: tab.id },
+    func: () => {
+      const root = document.documentElement.cloneNode(true);
+      root.querySelectorAll('script, style, noscript, svg, link, meta, iframe, img, video, canvas').forEach((e) => e.remove());
+      root.querySelectorAll('#fba-panel, #fba-alert, #fba-b1-badge').forEach((e) => e.remove());
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+      for (let n; (n = walker.nextNode());) {
+        const t = n.nodeValue.replace(/\s+/g, ' ');
+        n.nodeValue = t.length > 120 ? t.slice(0, 120) + '…' : t;
+      }
+      root.querySelectorAll('*').forEach((e) => {
+        for (const a of [...e.attributes]) {
+          if (/^(on|style$|srcset$|ng-reflect)/i.test(a.name)) e.removeAttribute(a.name);
+          else if (a.value.length > 200) e.setAttribute(a.name, a.value.slice(0, 200) + '…');
+        }
+      });
+      return '<!-- captured ' + location.href + ' -->\n' + root.outerHTML;
+    }
+  });
+  const name = 'freelancer-' + new URL(tab.url).pathname.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').slice(0, 60) + '.html';
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([res.result], { type: 'text/html' }));
+  a.download = name || 'freelancer-page.html';
+  a.click();
+  $('out').textContent = `✓ Saved ${a.download} (${Math.round(res.result.length / 1024)} KB) to your Downloads folder.`;
+};

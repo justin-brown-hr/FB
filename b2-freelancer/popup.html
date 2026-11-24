@@ -11,6 +11,8 @@
   .row { display: flex; gap: 8px; margin-top: 10px; }
   button { padding: 7px 12px; border: 0; border-radius: 6px; cursor: pointer; background: #139ff0; color: #fff; font-weight: 600; }
   button.sec { background: #3a3f4a; }
+  h2 { font-size: 13px; margin: 18px 0 0; padding-top: 12px; border-top: 1px solid #333; }
+  #tgOut { margin-top: 8px; white-space: pre-wrap; }
   #out { margin-top: 10px; white-space: pre-wrap; word-break: break-word; line-height: 1.5; }
 </style>
 </head>
@@ -21,6 +23,18 @@
   <div class="hint">Paste the code from your VPS. Leave empty if B1 is in this same Chrome.</div>
   <div class="row"><button id="save">Save &amp; check</button><button id="check" class="sec">Check</button></div>
   <div id="out"></div>
+
+  <h2>Telegram alerts</h2>
+  <label for="tgToken">Bot token</label>
+  <input id="tgToken" type="text" placeholder="123456789:AA…  (from @BotFather)">
+  <label for="tgChat">Chat ID</label>
+  <input id="tgChat" type="text" placeholder="send /start to your bot, then click Find">
+  <div class="row"><button id="tgFind" class="sec">Find chat ID</button><button id="tgSave">Save &amp; send test</button></div>
+  <div id="tgOut"></div>
+
+  <h2>Help me support you</h2>
+  <div class="row"><button id="capture" class="sec">Capture this page</button></div>
+  <div class="hint">Saves the page layout (long texts shortened, no scripts) as a file you can send to Claude, so the extension can be adapted to Freelancer's real pages.</div>
   <script src="popup.js"></script>
 </body>
 </html>
