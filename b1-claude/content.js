@@ -175,19 +175,25 @@
     const after = t.slice(t.indexOf(w) + w.length);
     return !/^[\d.]/.test(after); // "opus 5.5" must not match "opus 5.55"
   };
-  const shown = (el) => !!el && el.offsetParent !== null && getComputedStyle(el).visibility !== 'hidden';
+  // works for floating (position: fixed) menus too, where offsetParent is always null
+  const shown = (el) => {
+    if (!el || !el.getClientRects().length) return false;
+    const cs = getComputedStyle(el);
+    return cs.visibility !== 'hidden' && cs.display !== 'none' && Number(cs.opacity) !== 0;
+  };
 
+  // The model button shows e.g. "Opus 4.8 Extra". Skip notices like "Switched to Opus 4.8 ›".
+  const MODEL_START_RX = /^\s*(claude\s+)?(opus|sonnet|haiku|fable)\s*\d/i;
   function findModelButton() {
     const known = document.querySelector('[data-testid="model-selector-dropdown"], [data-testid*="model-selector" i], button[aria-label*="model" i]');
-    if (known) return known;
-    const input = findInput();
-    const scopes = [input && (input.closest('fieldset') || input.closest('form')), document].filter(Boolean);
-    for (const scope of scopes) {
-      const b = Array.from(scope.querySelectorAll('button, [role="button"], [role="combobox"]'))
-        .find((x) => shown(x) && (x.innerText || '').length < 60 && MODEL_RX.test(x.innerText || ''));
-      if (b) return b;
-    }
-    return null;
+    if (known && shown(known)) return known;
+    const cands = Array.from(document.querySelectorAll('button, [role="button"], [role="combobox"]'))
+      .filter((x) => shown(x) && !x.closest('[role="menu"]'))
+      .filter((x) => { const t = (x.innerText || '').trim(); return t.length < 40 && MODEL_START_RX.test(t) && !/switched|changed/i.test(t); });
+    // prefer the one that opens a menu, then the one lowest on the page (next to the input)
+    cands.sort((a, b) => (b.hasAttribute('aria-haspopup') || b.hasAttribute('data-state')) - (a.hasAttribute('aria-haspopup') || a.hasAttribute('data-state'))
+      || b.getBoundingClientRect().top - a.getBoundingClientRect().top);
+    return cands[0] || null;
   }
 
   const modelName = (btn) => { const m = (btn && btn.innerText || '').match(MODEL_RX); return m ? m[0] : (btn && btn.innerText || '').trim(); };
