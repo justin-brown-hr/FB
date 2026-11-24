@@ -92,7 +92,7 @@ Advanced: the relay uses plain HTTP. For HTTPS, put it behind your own domain (e
   The toolbar icon shows **ON** while the bot runs.
 - **Message alerts (MMS)**: new messages in your chats go to Telegram with the project title, the client's username and the message.
   Messages from usernames containing "recruiter" are ignored. MMS needs the Telegram bot token and chat ID to be set.
-- **Bot log**: what the bot did and any errors. Use **Copy log** to send it for troubleshooting.
+- **Bot log**: what the bot did and any errors over the last hour (older entries are removed automatically). Use **Copy log** to send it for troubleshooting.
 
 ## Troubleshooting
 

@@ -24,11 +24,22 @@ const setLocal = (o) => chrome.storage.local.set(o);
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // ---------------- log (shown in the popup) ----------------
+// Log entries older than 1 hour are removed automatically.
+const LOG_KEEP_MS = 60 * 60 * 1000;
+const freshLog = (list) => (list || []).filter((e) => e && typeof e === 'object' && Date.now() - e.t < LOG_KEEP_MS);
+
 async function log(line) {
   const { botLog = [] } = await local('botLog');
   const t = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-  botLog.push(`${t}  ${line}`);
-  await setLocal({ botLog: botLog.slice(-80) });
+  const list = freshLog(botLog);
+  list.push({ t: Date.now(), s: `${t}  ${line}` });
+  await setLocal({ botLog: list.slice(-500) });
+}
+
+async function pruneLog() {
+  const { botLog = [] } = await local('botLog');
+  const list = freshLog(botLog);
+  if (list.length !== botLog.length) await setLocal({ botLog: list });
 }
 async function setStatus(part, text) { await setLocal({ ['status_' + part]: text }); }
 
@@ -540,6 +551,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 });
 
 async function heartbeat() {
+  pruneLog();
   const cfg = await settings();
   if (cfg.mmsOn) poll(); // messages: backup check (live feed also triggers it on chat events)
   if (!cfg.botOn) return;

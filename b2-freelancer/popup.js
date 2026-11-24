@@ -151,7 +151,7 @@ async function refreshBotInfo() {
   if (l.status_stack) lines.push('Stack: ' + l.status_stack);
   if (l.status_mms) lines.push('Messages: ' + l.status_mms);
   $('botStatus').textContent = lines.join('\n');
-  const text = (l.botLog || []).slice().reverse().join('\n');
+  const text = (l.botLog || []).filter((e) => e && typeof e === 'object' && Date.now() - e.t < 3600000).map((e) => e.s).reverse().join('\n');
   if ($('botLog').textContent !== text) $('botLog').textContent = text || '(empty)';
 }
 refreshBotInfo();
