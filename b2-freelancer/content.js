@@ -275,18 +275,31 @@
       .find((b) => /^place bid$/i.test((b.innerText || '').trim()) && visible(b) && !b.closest('#fba-panel, #fba-alert'));
   }
 
+  // pause between clicks: a random time in [min, max] seconds (0 = no pause)
+  let pauseRange = [0, 0];
+  const pause = () => {
+    const [a, b] = pauseRange;
+    return b > 0 ? sleep((a + Math.random() * Math.max(0, b - a)) * 1000) : Promise.resolve();
+  };
+
   async function placeBid() {
     const ta = findBidTextarea();
     if (!ta || ta.value.trim().length < 100) return { ok: false, text: 'The proposal box is empty or shorter than 100 characters.' };
 
+    // SEALED is optional: tick it when the project offers it, otherwise just place the bid
+    let sealed = false;
     const box = findUpgradeCheckbox('SEALED');
-    if (!box) return { ok: false, text: 'Could not find the SEALED option. Nothing was placed.' };
-    if (!(await checkBox(box))) return { ok: false, text: 'Could not tick the SEALED option. Nothing was placed.' };
+    if (box) {
+      await pause();
+      sealed = await checkBox(box);
+      if (!sealed) return { ok: false, text: 'Could not tick the SEALED option. Nothing was placed.' };
+    }
 
     const btn = findPlaceBidButton();
-    if (!btn) return { ok: false, text: 'SEALED is ticked, but the Place Bid button was not found.' };
-    if (btn.disabled || btn.getAttribute('aria-disabled') === 'true') return { ok: false, text: 'SEALED is ticked, but Place Bid is disabled — check the form for errors.' };
+    if (!btn) return { ok: false, text: 'The Place Bid button was not found.' };
+    if (btn.disabled || btn.getAttribute('aria-disabled') === 'true') return { ok: false, text: 'Place Bid is disabled — check the form for errors.' };
     btn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    await pause();
     btn.click();
 
     // give Freelancer a moment, then look for a visible error message in the bid form
@@ -295,7 +308,7 @@
       .filter((e) => visible(e) && !e.closest('#fba-alert, #fba-panel') && (e.innerText || '').trim())
       .map((e) => e.innerText.trim())[0];
     if (err) return { ok: false, text: 'Freelancer says: ' + err.slice(0, 200) };
-    return { ok: true, text: 'Place Bid clicked with SEALED ticked.' };
+    return { ok: true, sealed, text: sealed ? 'Place Bid clicked with SEALED ticked.' : 'Place Bid clicked (no SEALED option on this project).' };
   }
 
   // Progress messages from B1 / the relay, reworded without naming the AI.
@@ -400,7 +413,7 @@
     try { r = await placeBid(); } catch (e) { r = { ok: false, text: String(e?.message || e) }; }
     if (r.ok) {
       setBidReady(false);
-      showAlert({ kind: 'ok', text: 'Bid placed (Sealed)' });
+      showAlert({ kind: 'ok', text: r.sealed ? 'Bid placed (Sealed)' : 'Bid placed' });
     } else {
       setBidReady(true); // let you fix the form and try again
       showAlert({ kind: 'err', text: 'Bid not placed: ' + r.text });
@@ -431,13 +444,16 @@
       }
     });
 
-    writeBtn.addEventListener('click', writeBid);
+    writeBtn.addEventListener('click', () => { writeBid(); });
   }
 
-  async function writeBid() {
-    if (busy) return;
+  // Returns { ok, result, reply } or { ok: false, error }.
+  function writeBid() {
+    if (busy) return Promise.resolve({ ok: false, error: 'Already writing a bid.' });
+    let settle;
+    const outcome = new Promise((r) => { settle = r; });
     const text = projectText();
-    try { await copyText(text); } catch (_) {}
+    copyText(text).catch(() => {});
 
     busy = true;
     setBidReady(false);
@@ -453,7 +469,7 @@
       clearInterval(ping);
       try { port && port.disconnect(); } catch (_) {}
     };
-    const fail = (msg) => { finish(); showAlert({ kind: 'err', text: 'Failed: ' + msg }); };
+    const fail = (msg) => { finish(); showAlert({ kind: 'err', text: 'Failed: ' + msg }); settle({ ok: false, error: msg }); };
 
     // keep both service workers alive while Claude is writing
     const ping = setInterval(() => { try { port.postMessage({ type: 'PING' }); } catch (_) {} }, 20000);
@@ -462,7 +478,7 @@
       port = chrome.runtime.connect({ name: 'bid' });
     } catch (e) {
       fail('Extension was reloaded — refresh this page and try again.');
-      return;
+      return outcome;
     }
 
     port.onMessage.addListener((m) => {
@@ -471,14 +487,81 @@
       else if (m.type === 'RESULT') {
         gotResult = true;
         fillBidForm(m.bid)
-          .then((r) => { finish(); resultAlert(r, m.bid); })
+          .then((r) => { finish(); resultAlert(r, m.bid); settle({ ok: true, result: r, reply: m.bid }); })
           .catch((e) => fail('Error while filling the form: ' + (e?.message || e)));
       }
     });
     port.onDisconnect.addListener(() => { if (busy && !gotResult) fail('Connection to B1 was lost.'); });
 
     port.postMessage({ type: 'GENERATE', text });
+    return outcome;
   }
+
+  // ---------------- auto bot (driven by background.js / bot.js) ----------------
+
+  async function waitFor(fn, ms) {
+    const end = Date.now() + ms;
+    while (Date.now() < end) { const v = fn(); if (v) return v; await sleep(500); }
+    return null;
+  }
+
+  function clientCountryOnPage(skip) {
+    const box = findLabelEl(/^About the client$/i);
+    let el = box;
+    for (let i = 0; i < 5 && el && (el.innerText || '').length < 120; i++) el = el.parentElement;
+    const text = ((el && el.innerText) || '').toLowerCase();
+    return skip.find((c) => c && text.includes(c.toLowerCase())) || null;
+  }
+
+  async function autoBid(opts) {
+    pauseRange = [Number(opts.pauseMin) || 0, Number(opts.pauseMax) || 0];
+    if (!isProjectPage()) return { ok: false, reason: 'Not a project page.' };
+    if (!panel) buildPanel();
+
+    const ta = await waitFor(findBidTextarea, 25000);
+    if (!ta) return { ok: false, reason: 'No bid form (already bid, project closed, or not allowed).' };
+    const badCountry = clientCountryOnPage(opts.skipCountries || []);
+    if (badCountry) return { ok: false, skipped: true, reason: 'Client is from ' + badCountry };
+
+    await pause();
+    const w = await writeBid();
+    if (!w.ok) return { ok: false, reason: w.error };
+    const r = w.result;
+    if (!r.success) return { ok: false, reason: oneLine(w.reply).slice(0, 300) || r.problems.join(' · ') };
+
+    await pause();
+    const placed = await placeBid();
+    setBidReady(false);
+    const p = r.parsed;
+    return {
+      ok: placed.ok, reason: placed.ok ? '' : placed.text, sealed: placed.sealed,
+      profile: p.profile && p.profile.option, amount: p.amount, days: p.days, title: projectTitle()
+    };
+  }
+
+  function cookie(name) {
+    const m = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]*)'));
+    return m ? decodeURIComponent(m[1]) : '';
+  }
+
+  // Same-origin call to Freelancer's own API with this tab's login.
+  async function api(path) {
+    const uid = cookie('GETAFREE_USER_ID'), hash = cookie('GETAFREE_AUTH_HASH_V2');
+    const headers = { Accept: 'application/json' };
+    if (uid && hash) headers['freelancer-auth-v2'] = uid + ';' + hash;
+    const res = await fetch(path, { credentials: 'include', headers });
+    const body = await res.json().catch(() => null);
+    if (!res.ok || !body || body.status === 'error') {
+      return { ok: false, error: `HTTP ${res.status} ${(body && (body.message || body.error_code)) || ''}`.trim() };
+    }
+    return { ok: true, result: body.result, userId: uid };
+  }
+
+  chrome.runtime.onMessage.addListener((msg, _s, sendResponse) => {
+    if (msg?.type === 'FBA_PING') { sendResponse({ ok: true, url: location.href, loggedIn: !!cookie('GETAFREE_USER_ID') || !!document.querySelector('[href*="/logout"], fl-user-avatar, app-user-avatar') }); return; }
+    if (msg?.type === 'FBA_API') { api(msg.path).then(sendResponse, (e) => sendResponse({ ok: false, error: String(e?.message || e) })); return true; }
+    if (msg?.type === 'FBA_AUTO_BID') { autoBid(msg.opts || {}).then(sendResponse, (e) => sendResponse({ ok: false, reason: String(e?.message || e) })); return true; }
+  });
 
   // Freelancer is a single-page app: show the panel only on project pages.
   function sync() {

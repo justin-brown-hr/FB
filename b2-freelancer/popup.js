@@ -109,3 +109,46 @@ $('capture').onclick = async () => {
   a.click();
   $('out').textContent = `✓ Saved ${a.download} (${Math.round(res.result.length / 1024)} KB) to your Downloads folder.`;
 };
+
+
+// ---------------- auto bot + MMS ----------------
+const BOT_DEFAULTS = { botOn: false, mmsOn: true, minFixedUsd: 260, minHourlyUsd: 16, skipCountries: 'India, Pakistan, Bangladesh, Indonesia', keywords: '', pauseMin: 2, pauseMax: 5 };
+const botFields = ['minFixedUsd', 'minHourlyUsd', 'pauseMin', 'pauseMax', 'skipCountries', 'keywords'];
+
+function showBot(s) {
+  $('botBtn').textContent = s.botOn ? 'Stop bot' : 'Start bot';
+  $('botBtn').classList.toggle('on', s.botOn);
+  $('mmsOn').checked = s.mmsOn;
+}
+chrome.storage.sync.get(BOT_DEFAULTS).then((s) => {
+  showBot(s);
+  botFields.forEach((f) => { $(f).value = s[f]; });
+});
+$('botBtn').onclick = async () => {
+  const { botOn } = await chrome.storage.sync.get(BOT_DEFAULTS);
+  await chrome.storage.sync.set({ botOn: !botOn });
+  showBot({ ...(await chrome.storage.sync.get(BOT_DEFAULTS)) });
+};
+$('mmsOn').onchange = () => chrome.storage.sync.set({ mmsOn: $('mmsOn').checked });
+$('botSave').onclick = async () => {
+  const o = {};
+  botFields.forEach((f) => { o[f] = $(f).type === 'number' ? Number($(f).value) || 0 : $(f).value.trim(); });
+  if (o.pauseMax < o.pauseMin) o.pauseMax = o.pauseMin;
+  await chrome.storage.sync.set(o);
+  $('botSave').textContent = 'Saved ✓';
+  setTimeout(() => { $('botSave').textContent = 'Save settings'; }, 1500);
+};
+
+async function refreshBotInfo() {
+  const l = await chrome.storage.local.get(['botLog', 'status_find', 'status_mms']);
+  const lines = [];
+  if (l.status_find) lines.push('Projects: ' + l.status_find);
+  if (l.status_mms) lines.push('Messages: ' + l.status_mms);
+  $('botStatus').textContent = lines.join('\n');
+  const text = (l.botLog || []).slice().reverse().join('\n');
+  if ($('botLog').textContent !== text) $('botLog').textContent = text || '(empty)';
+}
+refreshBotInfo();
+setInterval(refreshBotInfo, 2000);
+$('logCopy').onclick = async () => { await navigator.clipboard.writeText($('botLog').textContent); $('logCopy').textContent = 'Copied ✓'; };
+$('logClear').onclick = async () => { await chrome.storage.local.set({ botLog: [] }); refreshBotInfo(); };

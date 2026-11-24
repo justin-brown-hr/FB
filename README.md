@@ -76,6 +76,19 @@ To use B1 and B2 in the same Chrome again, clear the pairing code.
 
 Advanced: the relay uses plain HTTP. For HTTPS, put it behind your own domain (e.g. `caddy reverse-proxy --from bids.example.com --to 127.0.0.1:8787`) and use `https://bids.example.com/<token>` as the pairing code.
 
+## Auto bot and message alerts (B2 popup)
+
+- **Start bot / Stop bot**: every 30 s the bot checks new projects through Freelancer's own data API, in a pinned Freelancer tab it opens.
+  It keeps projects that match the filters:
+  - fixed budget over $260, or hourly rate over $16 (other currencies are converted to USD);
+  - client not from India, Pakistan, Bangladesh or Indonesia.
+  For each match it opens the project, runs **Write bid**, and if that succeeds clicks **Bid**: it ticks SEALED when the project has it, otherwise it just places the bid.
+  Each step waits a random 2–5 s (set this in *Bot settings*). Every result goes to Telegram: `✅ Bid placed …` or `❌ Bid failed … reason`.
+  The toolbar icon shows **ON** while the bot runs.
+- **Message alerts (MMS)**: new messages in your chats go to Telegram with the project title, the client's username and the message.
+  Messages from usernames containing "recruiter" are ignored. MMS needs the Telegram bot token and chat ID to be set.
+- **Bot log**: what the bot did and any errors. Use **Copy log** to send it for troubleshooting.
+
 ## Troubleshooting
 
 - **Nothing appears on `chrome://extensions` after Load unpacked:** Chrome was started with `--disable-extensions`. Check `chrome://version` → Command Line, then restart Chrome without that flag.

@@ -154,3 +154,6 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   tgSend(String(msg.text || '')).then(sendResponse);
   return true;
 });
+
+// auto-bid bot + message monitor
+importScripts('bot.js');

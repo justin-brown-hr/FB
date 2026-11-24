@@ -11,6 +11,11 @@
   .row { display: flex; gap: 8px; margin-top: 10px; }
   button { padding: 7px 12px; border: 0; border-radius: 6px; cursor: pointer; background: #139ff0; color: #fff; font-weight: 600; }
   button.sec { background: #3a3f4a; }
+  details { margin-top: 10px; } summary { cursor: pointer; color: #9aa0aa; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; margin-top: 8px; }
+  .grid label { margin: 0; font-weight: 500; font-size: 12px; }
+  #botLog { max-height: 180px; overflow: auto; background: #15171c; padding: 6px; border-radius: 6px; font-size: 11px; white-space: pre-wrap; margin: 8px 0 0; }
+  #botBtn.on { background: #c0392b; }
   h2 { font-size: 13px; margin: 18px 0 0; padding-top: 12px; border-top: 1px solid #333; }
   #tgOut { margin-top: 8px; white-space: pre-wrap; }
   #out { margin-top: 10px; white-space: pre-wrap; word-break: break-word; line-height: 1.5; }
@@ -18,6 +23,28 @@
 </head>
 <body>
   <h1>Bid Assistant B2 (Freelancer) <span id="ver" style="color:#9aa0aa;font-weight:400;font-size:12px"></span></h1>
+
+  <div class="row" style="margin:0 0 6px"><button id="botBtn" style="flex:1;padding:10px">Start bot</button></div>
+  <div class="row" style="margin-top:4px"><input id="mmsOn" type="checkbox" style="width:auto"><span>Message alerts to Telegram (MMS)</span></div>
+  <div id="botStatus" class="hint" style="white-space:pre-wrap;margin-top:6px"></div>
+  <details>
+    <summary>Bot settings</summary>
+    <div class="grid">
+      <label>Fixed budget over (USD)<input id="minFixedUsd" type="number"></label>
+      <label>Hourly rate over (USD)<input id="minHourlyUsd" type="number"></label>
+      <label>Pause per action, min (s)<input id="pauseMin" type="number" step="0.5"></label>
+      <label>max (s)<input id="pauseMax" type="number" step="0.5"></label>
+    </div>
+    <label>Skip client countries</label><input id="skipCountries" type="text">
+    <label>Only projects with these words (optional)</label><input id="keywords" type="text" placeholder="empty = all new projects">
+    <div class="row"><button id="botSave" class="sec">Save settings</button></div>
+  </details>
+  <details>
+    <summary>Bot log</summary>
+    <pre id="botLog"></pre>
+    <div class="row"><button id="logCopy" class="sec">Copy log</button><button id="logClear" class="sec">Clear</button></div>
+  </details>
+  <h2>Setup</h2>
   <label for="code">Pairing code</label>
   <input id="code" type="text" placeholder="1.2.3.4:8787/abc123…">
   <div class="hint">Paste the code from your VPS. Leave empty if B1 is in this same Chrome.</div>
