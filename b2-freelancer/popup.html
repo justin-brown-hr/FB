@@ -43,6 +43,10 @@
     </select>
     <label>Search page (your skills)</label><input id="watchUrl" type="text" placeholder="https://www.freelancer.com/search/projects?projectSkills=3,9,…">
     <div class="hint">Open Freelancer's project search, pick your skills, and paste the address. B2 listens for new projects in those skills (empty skills = the skills on your profile) and keeps this page open in a tab.</div>
+    <div class="grid">
+      <label>Wait after a new project, min (s)<input id="reactMin" type="number" step="0.1"></label>
+      <label>max (s)<input id="reactMax" type="number" step="0.1"></label>
+    </div>
     <div id="timerOpts" class="grid">
       <label>Check every (s)<input id="checkEverySec" type="number" min="3"></label>
     </div>

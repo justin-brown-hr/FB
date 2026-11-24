@@ -15,6 +15,8 @@ const BOT_DEFAULTS = {
   pauseMax: 5,
   maxAgeMin: 30,         // ignore projects posted longer ago than this
   checkEverySec: 5,      // timer mode: how often to look for new projects
+  reactMin: 1.3,         // live feed: random wait (s) after a new project appears, before it goes to the bidder
+  reactMax: 1.7,
   detectMode: 'live',    // 'live' = Freelancer's real-time feed (no timer), 'timer' = check every N s
   watchUrl: 'https://www.freelancer.com/search/projects'
 };
@@ -450,6 +452,8 @@ async function onLiveProject(d) {
 
   const seo = String(d.seo_url || d.id);
   const url = seo.startsWith('http') ? seo : 'https://www.freelancer.com/projects/' + seo;
+  const react = Number(cfg.reactMin) + Math.random() * Math.max(0, Number(cfg.reactMax) - Number(cfg.reactMin));
+  if (react > 0) await wait(react * 1000);
   await stackPush([{ id: d.id, title, url, hourly, usd: Math.round(max), country, posted: d.time_submitted || Math.floor(Date.now() / 1000) }]);
   work();
 }

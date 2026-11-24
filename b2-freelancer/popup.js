@@ -112,8 +112,8 @@ $('capture').onclick = async () => {
 
 
 // ---------------- auto bot + MMS ----------------
-const BOT_DEFAULTS = { botOn: false, mmsOn: true, minFixedUsd: 260, minHourlyUsd: 16, skipCountries: 'India, Pakistan, Bangladesh, Indonesia', keywords: '', pauseMin: 2, pauseMax: 5, checkEverySec: 5, detectMode: 'live', watchUrl: 'https://www.freelancer.com/search/projects' };
-const botFields = ['minFixedUsd', 'minHourlyUsd', 'pauseMin', 'pauseMax', 'checkEverySec', 'skipCountries', 'keywords', 'detectMode', 'watchUrl'];
+const BOT_DEFAULTS = { botOn: false, mmsOn: true, minFixedUsd: 260, minHourlyUsd: 16, skipCountries: 'India, Pakistan, Bangladesh, Indonesia', keywords: '', pauseMin: 2, pauseMax: 5, checkEverySec: 5, reactMin: 1.3, reactMax: 1.7, detectMode: 'live', watchUrl: 'https://www.freelancer.com/search/projects' };
+const botFields = ['minFixedUsd', 'minHourlyUsd', 'pauseMin', 'pauseMax', 'checkEverySec', 'reactMin', 'reactMax', 'skipCountries', 'keywords', 'detectMode', 'watchUrl'];
 const showMode = () => { $('timerOpts').style.display = $('detectMode').value === 'timer' ? '' : 'none'; };
 
 function showBot(s) {
@@ -137,6 +137,7 @@ $('botSave').onclick = async () => {
   const o = {};
   botFields.forEach((f) => { o[f] = $(f).type === 'number' ? Number($(f).value) || 0 : $(f).value.trim(); });
   if (o.pauseMax < o.pauseMin) o.pauseMax = o.pauseMin;
+  if (o.reactMax < o.reactMin) o.reactMax = o.reactMin;
   o.checkEverySec = Math.max(3, o.checkEverySec || 5);
   if (!/^https:\/\/www\.freelancer\./.test(o.watchUrl)) o.watchUrl = 'https://www.freelancer.com/search/projects';
   await chrome.storage.sync.set(o);
