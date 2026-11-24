@@ -112,8 +112,8 @@ $('capture').onclick = async () => {
 
 
 // ---------------- auto bot + MMS ----------------
-const BOT_DEFAULTS = { botOn: false, mmsOn: true, minFixedUsd: 260, minHourlyUsd: 16, skipCountries: 'India, Pakistan, Bangladesh, Indonesia', keywords: '', pauseMin: 2, pauseMax: 5 };
-const botFields = ['minFixedUsd', 'minHourlyUsd', 'pauseMin', 'pauseMax', 'skipCountries', 'keywords'];
+const BOT_DEFAULTS = { botOn: false, mmsOn: true, minFixedUsd: 260, minHourlyUsd: 16, skipCountries: 'India, Pakistan, Bangladesh, Indonesia', keywords: '', pauseMin: 2, pauseMax: 5, checkEverySec: 5 };
+const botFields = ['minFixedUsd', 'minHourlyUsd', 'pauseMin', 'pauseMax', 'checkEverySec', 'skipCountries', 'keywords'];
 
 function showBot(s) {
   $('botBtn').textContent = s.botOn ? 'Stop bot' : 'Start bot';
@@ -134,6 +134,7 @@ $('botSave').onclick = async () => {
   const o = {};
   botFields.forEach((f) => { o[f] = $(f).type === 'number' ? Number($(f).value) || 0 : $(f).value.trim(); });
   if (o.pauseMax < o.pauseMin) o.pauseMax = o.pauseMin;
+  o.checkEverySec = Math.max(3, o.checkEverySec || 5);
   await chrome.storage.sync.set(o);
   $('botSave').textContent = 'Saved ✓';
   setTimeout(() => { $('botSave').textContent = 'Save settings'; }, 1500);

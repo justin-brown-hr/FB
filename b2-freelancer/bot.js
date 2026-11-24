@@ -13,7 +13,8 @@ const BOT_DEFAULTS = {
   keywords: '',          // optional search words; empty = all new projects
   pauseMin: 2,           // seconds between actions (random in [min, max])
   pauseMax: 5,
-  maxAgeMin: 30          // ignore projects posted longer ago than this
+  maxAgeMin: 30,         // ignore projects posted longer ago than this
+  checkEverySec: 5       // how often to look for new projects
 };
 const getBot = () => chrome.storage.sync.get(BOT_DEFAULTS);
 const local = (k) => chrome.storage.local.get(k);
@@ -256,7 +257,8 @@ async function poll() {
   polling = true;
   try {
     const cfg = await settings();
-    if (cfg.mmsOn) {
+    if (cfg.mmsOn && Date.now() - lastMms >= 15000) {
+      lastMms = Date.now();
       try { await checkMessages(); } catch (e) { await setStatus('mms', '✗ ' + e.message); await log('MMS error: ' + e.message); }
     }
     if (cfg.botOn) {
@@ -288,9 +290,29 @@ async function work() {
   }
 }
 
+let lastMms = 0;
+
 async function tick() {
   await poll();
   work(); // not awaited: bidding runs while the next checks keep filling the stack
+}
+
+// Fast loop: checks every few seconds while the bot (or MMS) is on.
+// The 30 s alarm below only restarts this loop if Chrome ever stopped the background worker.
+let looping = false;
+async function loop() {
+  if (looping) return;
+  looping = true;
+  try {
+    while (true) {
+      const cfg = await settings();
+      if (!cfg.botOn && !cfg.mmsOn) break;
+      await tick();
+      await wait(Math.max(3, Number(cfg.botOn ? cfg.checkEverySec : 15) || 5) * 1000);
+    }
+  } finally {
+    looping = false;
+  }
 }
 
 async function updateBadge() {
@@ -300,15 +322,16 @@ async function updateBadge() {
 }
 
 chrome.alarms.create('fba-bot', { periodInMinutes: 0.5 });
-chrome.alarms.onAlarm.addListener((a) => { if (a.name === 'fba-bot') tick(); });
+chrome.alarms.onAlarm.addListener((a) => { if (a.name === 'fba-bot') loop(); });
 chrome.storage.onChanged.addListener(async (c, area) => {
   if (area !== 'sync') return;
   if (c.botOn) {
-    if (c.botOn.newValue) { await setLocal({ botStartedAt: Date.now(), botBaseline: false, botStack: [] }); await setStatus('stack', '0 waiting'); await log('Bot started'); tick(); }
+    if (c.botOn.newValue) { await setLocal({ botStartedAt: Date.now(), botBaseline: false, botStack: [] }); await setStatus('stack', '0 waiting'); await log('Bot started'); loop(); }
     else await log('Bot stopped');
     updateBadge();
   }
-  if (c.mmsOn && c.mmsOn.newValue) tick();
+  if (c.mmsOn && c.mmsOn.newValue) loop();
 });
-chrome.runtime.onStartup.addListener(updateBadge);
+chrome.runtime.onStartup.addListener(() => { updateBadge(); loop(); });
 updateBadge();
+loop();

@@ -78,7 +78,7 @@ Advanced: the relay uses plain HTTP. For HTTPS, put it behind your own domain (e
 
 ## Auto bot and message alerts (B2 popup)
 
-- **Start bot / Stop bot**: every 30 s the bot checks new projects through Freelancer's own data API, using an open Freelancer tab (it opens a normal one if none is open). It only bids on projects posted after you click Start. Each bid happens in a new tab that is closed when the bid is done.
+- **Start bot / Stop bot**: every 5 s (set in *Bot settings*, minimum 3 s) the bot checks new projects through Freelancer's own data API, using an open Freelancer tab (it opens a normal one if none is open). It only bids on projects posted after you click Start. Each bid happens in a new tab that is closed when the bid is done.
   It keeps projects that match the filters:
   - fixed budget over $260, or hourly rate over $16 (other currencies are converted to USD);
   - client not from India, Pakistan, Bangladesh or Indonesia.

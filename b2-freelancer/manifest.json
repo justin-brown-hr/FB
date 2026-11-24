@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Bid Assistant B2 (Freelancer)",
-  "version": "1.8.0",
+  "version": "1.9.0",
   "description": "Adds 'Copy project' and 'Write bid' buttons to Freelancer.com project pages. Write bid asks B1 (Claude) and fills your proposal.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0dJCUIRri7Lf5+31a3ZiFY+TlZ6LfQUp0Ht6zd9BIfzxPQhQZZ5MWh/HF4HHNMb8BxGRiKViJ9ZgDAkmc33fOSUCp4XazWEdN55MWoAxBW4oKKlLrct7tmiQgIVeciEFMrDD9XnsQ92YT3vzdPnx9BSjGNuKQAIaA9r8x+pRxwBlxMF5MYR2jrSMHjkp+JhAKXQkex6EuUCKl+H6mJmrR47c+aPR0CX/xYyyMoFC0mH5wpDYz9GcYZZ8bN6hfuJ2jfk/BSq/p7bg5nobBklcnCne0iYklBwfmglIE6BIwW+QyNQbRG0qNPij190m23cd03f18/IZl5XL3dSpf/kO6QIDAQAB",
   "permissions": [
