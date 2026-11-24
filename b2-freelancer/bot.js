@@ -1,7 +1,7 @@
 // B2 background: auto-bid bot + message monitor (MMS).
 // Loaded by background.js with importScripts('bot.js').
 //
-// Both read Freelancer's own API through a pinned "worker" freelancer.com tab
+// Both read Freelancer's own API through an open freelancer.com tab
 // (same-origin, uses your login), and report to Telegram via tgSend() from background.js.
 
 const BOT_DEFAULTS = {
@@ -30,17 +30,21 @@ async function log(line) {
 async function setStatus(part, text) { await setLocal({ ['status_' + part]: text }); }
 
 // ---------------- worker tab ----------------
+const bidTabs = new Set(); // tabs the bot opened for bidding (never used for API calls)
+
 async function workerTab() {
   const { workerTabId } = await local('workerTabId');
+  const ok = (t) => t && !bidTabs.has(t.id) && /^https:\/\/www\.freelancer\./.test(t.url || t.pendingUrl || '');
   if (workerTabId) {
-    try {
-      const t = await chrome.tabs.get(workerTabId);
-      if (/^https:\/\/www\.freelancer\./.test(t.url || t.pendingUrl || '')) return t;
-    } catch (_) {}
+    try { const t = await chrome.tabs.get(workerTabId); if (ok(t)) return t; } catch (_) {}
   }
-  const t = await chrome.tabs.create({ url: 'https://www.freelancer.com/dashboard', active: false, pinned: true });
+  const open = (await chrome.tabs.query({ url: 'https://www.freelancer.com/*' })).filter(ok);
+  let t = open.find((x) => !x.discarded) || open[0];
+  if (!t) {
+    t = await chrome.tabs.create({ url: 'https://www.freelancer.com/dashboard', active: false });
+    await tabLoaded(t.id);
+  }
   await setLocal({ workerTabId: t.id });
-  await tabLoaded(t.id);
   return t;
 }
 
@@ -139,53 +143,82 @@ async function checkMessages() {
 // ---------------- bot: find projects ----------------
 async function findProjects(cfg) {
   const q = cfg.keywords.trim() ? '&query=' + encodeURIComponent(cfg.keywords.trim()) : '';
-  const r = await api('/api/projects/0.1/projects/active/?limit=50&compact=true&job_details=true&user_details=true&user_country_details=true&full_description=false' + q);
+  const r = await api('/api/projects/0.1/projects/active/?limit=50&sort_field=time_submitted&reverse_sort=true&compact=true&job_details=true&user_details=true&user_country_details=true&full_description=false' + q);
   const projects = (r.result && r.result.projects) || [];
   const users = (r.result && r.result.users) || {};
-  const { botSeen = [], botStartedAt = Date.now() } = await local(['botSeen', 'botStartedAt']);
+  const { botSeen = [], botStartedAt = Date.now(), botBaseline = false } = await local(['botSeen', 'botStartedAt', 'botBaseline']);
   const seen = new Set(botSeen);
   const skip = cfg.skipCountries.split(',').map((c) => c.trim().toLowerCase()).filter(Boolean);
-  const oldest = Math.max(botStartedAt - 10 * 60000, Date.now() - cfg.maxAgeMin * 60000);
+
+  // First check after Start: everything already listed is old — remember it, bid on nothing.
+  if (!botBaseline) {
+    projects.forEach((p) => seen.add(p.id));
+    await setLocal({ botSeen: [...seen].slice(-3000), botBaseline: true });
+    await setStatus('find', `watching for new projects (ignoring ${projects.length} already posted) — ${new Date().toLocaleTimeString()}`);
+    await log(`Watching for projects posted after ${new Date(botStartedAt).toLocaleTimeString()}`);
+    return [];
+  }
 
   const picked = [];
   let counted = 0;
   for (const p of projects) {
     if (seen.has(p.id)) continue;
     seen.add(p.id);
+    // posted before Start (when Freelancer tells us the time) -> old
+    if (p.time_submitted && p.time_submitted * 1000 < botStartedAt - 60000) continue;
     counted++;
-    if (p.time_submitted && p.time_submitted * 1000 < oldest) continue;
     const hourly = p.type === 'hourly';
     const max = usd(p.budget && (p.budget.maximum || p.budget.minimum), p.currency);
     const min = hourly ? cfg.minHourlyUsd : cfg.minFixedUsd;
-    if (max == null || max <= min) continue;
+    if (max == null || max <= min) { await log(`Filtered: ${p.title} — budget $${max == null ? '?' : Math.round(max)}${hourly ? '/h' : ''}`); continue; }
     const country = countryOf(users, p.owner_id);
-    if (country && skip.includes(country.toLowerCase())) continue;
+    if (country && skip.includes(country.toLowerCase())) { await log(`Filtered: ${p.title} — client from ${country}`); continue; }
     picked.push({ id: p.id, title: p.title, url: projectUrl(p), hourly, usd: Math.round(max), country });
   }
   await setLocal({ botSeen: [...seen].slice(-3000) });
-  await setStatus('find', `${projects.length} active, ${counted} new, ${picked.length} match filters — ${new Date().toLocaleTimeString()}`);
+  await setStatus('find', `${counted} new since start, ${picked.length} matched — last check ${new Date().toLocaleTimeString()}`);
   return picked;
 }
 
 // ---------------- bot: bid on one project ----------------
 async function bidOn(p, cfg) {
   await log(`Bidding: ${p.title} (${p.hourly ? 'hourly' : 'fixed'} up to $${p.usd}${p.country ? ', ' + p.country : ''})`);
-  const t = await workerTab();
-  await chrome.tabs.update(t.id, { url: p.url });
-  await wait(800);
-  await tabLoaded(t.id);
-  await tabReady(t.id);
-  const skip = cfg.skipCountries.split(',').map((c) => c.trim()).filter(Boolean);
-  const r = await chrome.tabs.sendMessage(t.id, {
-    type: 'FBA_AUTO_BID',
-    opts: { pauseMin: cfg.pauseMin, pauseMax: cfg.pauseMax, skipCountries: skip }
-  });
+  const t = await chrome.tabs.create({ url: p.url, active: false });
+  bidTabs.add(t.id);
+  let r = null;
+  try {
+    const skip = cfg.skipCountries.split(',').map((c) => c.trim()).filter(Boolean);
+    // Freelancer can reload / redirect the page while it loads, which cuts the connection: retry then.
+    for (let attempt = 1; attempt <= 3 && !r; attempt++) {
+      await wait(800);
+      await tabLoaded(t.id);
+      await tabReady(t.id);
+      try {
+        r = await chrome.tabs.sendMessage(t.id, {
+          type: 'FBA_AUTO_BID',
+          opts: { pauseMin: cfg.pauseMin, pauseMax: cfg.pauseMax, skipCountries: skip }
+        });
+      } catch (e) {
+        if (!/message channel closed|Receiving end does not exist|port closed/i.test(e.message) || attempt === 3) throw e;
+        await log(`Page reloaded during the bid, retrying (${attempt}/2)…`);
+        await wait(2000);
+      }
+    }
+  } finally {
+    bidTabs.delete(t.id);
+    closeTab(t.id);
+  }
   if (r?.skipped) { await log(`Skipped: ${p.title} — ${r.reason}`); return; }
   const line = r?.ok
     ? `✅ Bid placed${r.sealed ? ' (sealed)' : ''}: ${p.title}\n${[r.profile, r.amount != null ? '$' + r.amount : '', r.days != null ? r.days + ' days' : ''].filter(Boolean).join(' · ')}\n${p.url}`
     : `❌ Bid failed: ${p.title}\n${(r && r.reason) || 'no answer from the page'}\n${p.url}`;
   await tgSend(line);
   await log(line.split('\n').slice(0, 2).join(' — '));
+}
+
+// close the bid tab once the bid is done (success or failure)
+function closeTab(id) {
+  chrome.tabs.remove(id).catch(() => {});
 }
 
 // ---------------- main tick ----------------
@@ -226,7 +259,7 @@ chrome.alarms.onAlarm.addListener((a) => { if (a.name === 'fba-bot') tick(); });
 chrome.storage.onChanged.addListener(async (c, area) => {
   if (area !== 'sync') return;
   if (c.botOn) {
-    if (c.botOn.newValue) { await setLocal({ botStartedAt: Date.now() }); await log('Bot started'); tick(); }
+    if (c.botOn.newValue) { await setLocal({ botStartedAt: Date.now(), botBaseline: false }); await log('Bot started'); tick(); }
     else await log('Bot stopped');
     updateBadge();
   }
