@@ -9,6 +9,7 @@ const DEFAULTS = {
   promptTemplate: '{project}',
   focusTab: false,
   timeoutSec: 240,
+  model: 'Opus 5.5',     // required model in the BID chat; checked (and switched back) after every bid
   relayUrl: '',           // e.g. http://127.0.0.1:8787 when the relay runs on this VPS
   relayToken: ''
 };
@@ -38,7 +39,7 @@ chrome.runtime.onConnectExternal.addListener(async (port) => {
     if (msg?.type === 'DIAG') { diagnose().then((r) => post({ type: 'DIAG', ...r })); return; }
     if (msg?.type !== 'GENERATE') return; // PINGs just keep the worker alive
     queue = queue.then(() => generate(msg.text, (s) => post({ type: 'STATUS', text: s }))
-      .then((bid) => post({ type: 'RESULT', bid }))
+      .then((bid) => { post({ type: 'RESULT', bid }); return ensureModel(); })
       .catch((e) => post({ type: 'ERROR', error: String(e?.message || e) })));
   };
   port.onMessage.addListener(handle);
@@ -136,11 +137,32 @@ async function getBidTab(settings, status) {
 
 // ---------- main flow ----------
 
+let lastBidTabId = null;
+
+// After a bid has been handed back: make sure the BID chat still uses the required model.
+async function ensureModel() {
+  const { model } = await getSettings();
+  if (!model || !model.trim() || !lastBidTabId) return;
+  let r;
+  try {
+    await ensureContentScript(lastBidTabId);
+    r = await ask(lastBidTabId, { type: 'ENSURE_MODEL', want: model.trim() });
+  } catch (e) {
+    r = { ok: false, error: String(e?.message || e) };
+  }
+  const time = new Date().toLocaleTimeString();
+  const text = r?.ok
+    ? (r.changed ? `✓ switched ${r.before} → ${r.after} at ${time}` : `✓ ${r.after} (checked ${time})`)
+    : `✗ ${r?.error || 'check failed'}${r?.before ? ' (shows ' + r.before + ')' : ''} — ${time}`;
+  await chrome.storage.local.set({ modelStatus: text });
+}
+
 async function generate(projectText, status) {
   if (!projectText || !projectText.trim()) throw new Error('No project details received.');
   const settings = await getSettings();
 
   const tab = await getBidTab(settings, status);
+  lastBidTabId = tab.id;
   if (settings.focusTab) {
     await chrome.tabs.update(tab.id, { active: true });
     await chrome.windows.update(tab.windowId, { focused: true }).catch(() => {});
@@ -257,7 +279,7 @@ async function relayLoop() {
       const post = (kind, body) => relayFetch(settings, `/api/jobs/${job.id}/${kind}`, { method: 'POST', body: JSON.stringify(body) }).catch(() => {});
       await new Promise((done) => {
         queue = queue.then(() => generate(job.text, (st) => post('status', { status: st }))
-          .then((bid) => post('result', { bid }))
+          .then((bid) => post('result', { bid }).then(ensureModel))
           .catch((e) => post('result', { error: String(e?.message || e) }))
           .finally(done));
       });

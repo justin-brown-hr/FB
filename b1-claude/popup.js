@@ -1,5 +1,5 @@
 document.getElementById('ver').textContent = 'v' + chrome.runtime.getManifest().version;
-const DEFAULTS = { chatUrl: '', chatName: 'BID', promptTemplate: '{project}', focusTab: false, timeoutSec: 240, relayUrl: '', relayToken: '' };
+const DEFAULTS = { chatUrl: '', chatName: 'BID', promptTemplate: '{project}', focusTab: false, timeoutSec: 240, model: 'Opus 5.5', relayUrl: '', relayToken: '' };
 const $ = (id) => document.getElementById(id);
 const say = (t, color = '#6fcf97') => { $('msg').style.color = color; $('msg').textContent = t; };
 
@@ -20,6 +20,7 @@ chrome.storage.sync.get(DEFAULTS).then((s) => {
   $('promptTemplate').value = s.promptTemplate;
   $('timeoutSec').value = s.timeoutSec;
   $('focusTab').checked = s.focusTab;
+  $('model').value = s.model;
 });
 
 $('useCurrent').onclick = async () => {
@@ -37,7 +38,8 @@ $('save').onclick = async () => {
     chatName: $('chatName').value.trim() || 'BID',
     promptTemplate: $('promptTemplate').value || '{project}',
     timeoutSec: Math.max(30, Number($('timeoutSec').value) || 240),
-    focusTab: $('focusTab').checked
+    focusTab: $('focusTab').checked,
+    model: $('model').value.trim()
   });
   say('Saved ✓');
 };
@@ -48,3 +50,5 @@ $('test').onclick = async () => {
   const t = r?.text || 'No answer';
   say(t, t.startsWith('✗') ? '#eb5757' : '#6fcf97');
 };
+
+chrome.storage.local.get('modelStatus').then(({ modelStatus }) => { $('modelStatus').textContent = modelStatus ? 'Last check: ' + modelStatus : ''; });

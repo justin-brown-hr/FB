@@ -166,8 +166,95 @@
   const ready = () => badge('B1 ready', '#2e7d4f');
   if (!isLoggedOut()) ready();
 
+  // ---------- model check: make sure the chat uses the required model (e.g. "Opus 5.5") ----------
+  const MODEL_RX = /\b(opus|sonnet|haiku|fable)\b\s*\d+(?:\.\d+)?/i;
+  const normModel = (t) => (t || '').toLowerCase().replace(/\bclaude\b/g, ' ').replace(/\s+/g, ' ').trim();
+  const isWanted = (text, want) => {
+    const w = normModel(want), t = normModel(text);
+    if (!w || !t.includes(w)) return false;
+    const after = t.slice(t.indexOf(w) + w.length);
+    return !/^[\d.]/.test(after); // "opus 5.5" must not match "opus 5.55"
+  };
+  const shown = (el) => !!el && el.offsetParent !== null && getComputedStyle(el).visibility !== 'hidden';
+
+  function findModelButton() {
+    const known = document.querySelector('[data-testid="model-selector-dropdown"], [data-testid*="model-selector" i], button[aria-label*="model" i]');
+    if (known) return known;
+    const input = findInput();
+    const scopes = [input && (input.closest('fieldset') || input.closest('form')), document].filter(Boolean);
+    for (const scope of scopes) {
+      const b = Array.from(scope.querySelectorAll('button, [role="button"], [role="combobox"]'))
+        .find((x) => shown(x) && (x.innerText || '').length < 60 && MODEL_RX.test(x.innerText || ''));
+      if (b) return b;
+    }
+    return null;
+  }
+
+  const modelName = (btn) => { const m = (btn && btn.innerText || '').match(MODEL_RX); return m ? m[0] : (btn && btn.innerText || '').trim(); };
+
+  // a real-looking click (claude.ai's menus open on pointer down)
+  function press(el) {
+    const o = { bubbles: true, cancelable: true, button: 0, buttons: 1, pointerType: 'mouse', isPrimary: true, view: window };
+    el.dispatchEvent(new PointerEvent('pointerdown', o));
+    el.dispatchEvent(new MouseEvent('mousedown', o));
+    el.dispatchEvent(new PointerEvent('pointerup', { ...o, buttons: 0 }));
+    el.dispatchEvent(new MouseEvent('mouseup', { ...o, buttons: 0 }));
+    el.click();
+  }
+  function hover(el) {
+    const o = { bubbles: true, cancelable: true, pointerType: 'mouse', view: window };
+    ['pointerover', 'pointerenter', 'mouseover', 'mouseenter', 'pointermove', 'mousemove'].forEach((t) =>
+      el.dispatchEvent(t.startsWith('pointer') ? new PointerEvent(t, o) : new MouseEvent(t, o)));
+  }
+  const escape = () => {
+    const k = { key: 'Escape', code: 'Escape', keyCode: 27, bubbles: true, cancelable: true };
+    (document.activeElement || document.body).dispatchEvent(new KeyboardEvent('keydown', k));
+    document.dispatchEvent(new KeyboardEvent('keydown', k));
+  };
+
+  function menuItems() {
+    return Array.from(document.querySelectorAll('[role="menuitem"], [role="menuitemradio"], [role="option"], [role="menuitemcheckbox"]')).filter(shown);
+  }
+
+  async function ensureModel(want) {
+    const btn = findModelButton();
+    if (!btn) return { ok: false, error: 'Model button not found on the page.' };
+    const before = modelName(btn);
+    if (isWanted(btn.innerText, want)) return { ok: true, before, after: before, changed: false };
+
+    press(btn);
+    let option = null;
+    for (let i = 0; i < 20 && !option; i++) {
+      await sleep(150);
+      const items = menuItems();
+      option = items.filter((x) => isWanted(x.innerText, want)).sort((a, b) => a.innerText.length - b.innerText.length)[0];
+      if (!option && i === 5) {
+        // the model may be in a "More models" sub-menu
+        const more = items.find((x) => /more models|other models|more$/i.test((x.innerText || '').trim().split('\n')[0]));
+        if (more) {
+          hover(more); press(more);
+          more.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', code: 'ArrowRight', keyCode: 39, bubbles: true }));
+        }
+      }
+    }
+    if (!option) { escape(); return { ok: false, before, error: `"${want}" is not in the model menu.` }; }
+    hover(option);
+    press(option);
+    for (let i = 0; i < 20; i++) {
+      await sleep(150);
+      const now = findModelButton();
+      if (now && isWanted(now.innerText, want)) { escape(); return { ok: true, before, after: modelName(now), changed: true }; }
+    }
+    escape();
+    const now = findModelButton();
+    return { ok: false, before, after: modelName(now), error: 'Clicked the model, but the chat still shows ' + modelName(now) + '.' };
+  }
+
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     switch (msg?.type) {
+      case 'ENSURE_MODEL':
+        ensureModel(msg.want || '').then(sendResponse, (e) => sendResponse({ ok: false, error: String(e?.message || e) }));
+        return true; // async
       case 'PING': sendResponse({ ok: true, url: location.href }); return;
       case 'STATE': sendResponse(state()); return;
       case 'FIND_CHAT_LINK':

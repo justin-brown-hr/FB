@@ -61,6 +61,12 @@ Open a project page on freelancer.com and click **Write bid** (top right). A one
   Clicking **Bid** ticks **SEALED** under Optional Upgrades and clicks **Place Bid**. Nothing else is ticked.
 - **Failed:** there was no code box, or the profile didn't match. The alert lists why. Whatever could be filled is filled, but the Bid button stays grey (inactive), so you place the bid yourself.
 
+## Model check (B1)
+
+Claude sometimes switches the BID chat to another model. After every bid has been sent back to B2, B1 checks the model shown in the chat.
+If it isn't the **Required model** from the B1 popup (default **Opus 5.5**), B1 opens the model menu (also under "More models") and selects it.
+The popup shows the last check, e.g. `✓ switched Opus 4.8 → Opus 5.5`. Leave the field empty to turn the check off.
+
 ## B1 on a VPS, B2 on your PC
 
 1. **On the VPS**, run one command:
