@@ -62,6 +62,7 @@ function tabLoaded(tabId, timeout = 45000) {
 }
 
 async function tabReady(tabId) {
+  let injectError = '';
   for (let i = 0; i < 30; i++) {
     try {
       const t = await chrome.tabs.get(tabId);
@@ -69,9 +70,25 @@ async function tabReady(tabId) {
       const r = await chrome.tabs.sendMessage(tabId, { type: 'FBA_PING' });
       if (r?.ok) return r;
     } catch (_) {}
+    // no answer: load the page script into the tab ourselves (tab opened before a reload, script blocked, …)
+    if (i === 3 || i === 15) {
+      try {
+        await chrome.scripting.insertCSS({ target: { tabId }, files: ['content.css'] }).catch(() => {});
+        await chrome.scripting.executeScript({ target: { tabId }, files: ['parse.js', 'content.js'] });
+        injectError = '';
+      } catch (e) {
+        injectError = e.message || String(e);
+      }
+    }
     await wait(1000);
   }
-  throw new Error('The Freelancer worker tab does not respond (reload it).');
+  // still nothing: say why
+  let where = '';
+  try {
+    const t = await chrome.tabs.get(tabId);
+    where = ` Tab: ${t.url || t.pendingUrl || '?'} (${t.status}${t.discarded ? ', discarded' : ''}${t.frozen ? ', frozen' : ''}).`;
+  } catch (_) { where = ' The tab was closed.'; }
+  throw new Error('The Freelancer tab does not respond.' + where + (injectError ? ' Chrome says: ' + injectError : ' Reload that tab, or check that B2 may run on freelancer.com (chrome://extensions → B2 → Details → Site access).'));
 }
 
 async function api(path) {

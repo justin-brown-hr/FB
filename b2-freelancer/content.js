@@ -1,7 +1,11 @@
 // B2 content script on freelancer.com project pages.
 (() => {
-  if (window.__bidAssistantB2) return;
-  window.__bidAssistantB2 = true;
+  // A copy left over from before the extension was reloaded can't talk to the extension any more
+  // (its chrome.runtime.id is gone). Only skip when a *working* copy is already running.
+  const prev = window.__bidAssistantB2;
+  if (prev && typeof prev.alive === 'function' && prev.alive()) return;
+  document.querySelectorAll('#fba-panel, #fba-alert').forEach((e) => e.remove()); // the dead copy's buttons
+  window.__bidAssistantB2 = { alive: () => { try { return !!chrome.runtime.id; } catch (_) { return false; } } };
 
   const isProjectPage = () => /^\/projects\/.+/.test(location.pathname);
   const clean = (s) => (s || '').replace(/ /g, ' ').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
