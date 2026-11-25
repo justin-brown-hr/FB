@@ -320,7 +320,12 @@
     t = (t || '').toLowerCase();
     if (/writing/.test(t)) return 'Writing bid…';
     if (/sending/.test(t)) return 'Sending project…';
-    return 'Preparing…';   // opening the chat, waiting for the input box, waiting for / picked up by B1
+    // which preparing step, so a long wait can be traced
+    if (/waiting for b1/.test(t)) return 'Preparing… (waiting for B1 to pick it up)';
+    if (/picked up/.test(t)) return 'Preparing… (B1 started)';
+    if (/opening/.test(t)) return 'Preparing… (opening the chat)';
+    if (/input box/.test(t)) return 'Preparing… (waiting for the chat to be ready)';
+    return 'Preparing…';
   }
 
   // ---------------- UI ----------------

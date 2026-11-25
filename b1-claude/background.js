@@ -289,7 +289,18 @@ async function relayLoop() {
   }
 }
 
-// The service worker can be stopped by Chrome; the alarm restarts the loop every 30 s.
+// Keep B1 awake while it serves the relay: Chrome stops an extension's background after ~30 s
+// without activity, and then a new job would wait on the relay until the alarm below wakes B1
+// (B2 shows "Preparing…" meanwhile). A small extension call every 20 s counts as activity.
+setInterval(async () => {
+  const { relayUrl, relayToken } = await getSettings();
+  if (relayUrl && relayToken) {
+    chrome.runtime.getPlatformInfo(() => {});
+    relayLoop(); // restarts the loop if it ever stopped
+  }
+}, 20000);
+
+// The service worker can still be stopped (Chrome restart, crash); the alarm restarts the loop every 30 s.
 chrome.alarms.create('relay', { periodInMinutes: 0.5 });
 chrome.alarms.onAlarm.addListener((a) => { if (a.name === 'relay') relayLoop(); });
 chrome.runtime.onStartup.addListener(relayLoop);

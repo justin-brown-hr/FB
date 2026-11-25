@@ -24,9 +24,13 @@
     );
   }
 
+  // Only the real "stop the answer" button counts — not other buttons with "stop" in their name
+  // (voice input, dictation, …), which would make B1 wait while the chat is idle.
+  const STOP_RX = /^stop( response| generating| answer| claude)?$/i;
   function isStreaming() {
     if (document.querySelector('[data-is-streaming="true"]')) return true;
-    return !!document.querySelector('button[aria-label*="Stop" i]');
+    return Array.from(document.querySelectorAll('button[aria-label]'))
+      .some((b) => STOP_RX.test(b.getAttribute('aria-label').trim()) && b.getClientRects().length > 0);
   }
 
   function assistantMessages() {
