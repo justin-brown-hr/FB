@@ -9,7 +9,6 @@ const DEFAULTS = {
   promptTemplate: '{project}',
   focusTab: false,
   timeoutSec: 240,
-  model: 'Opus 5.5',     // required model in the BID chat; checked (and switched back) after every bid
   relayUrl: '',           // e.g. http://127.0.0.1:8787 when the relay runs on this VPS
   relayToken: ''
 };
@@ -138,15 +137,16 @@ async function getBidTab(settings, status) {
 // ---------- main flow ----------
 
 let lastBidTabId = null;
+const REQUIRED_MODEL = 'Opus 5.5'; // the BID chat is switched back to this model after every bid
 
 // After a bid has been handed back: make sure the BID chat still uses the required model.
 async function ensureModel() {
-  const { model } = await getSettings();
-  if (!model || !model.trim() || !lastBidTabId) return;
+  const model = REQUIRED_MODEL;
+  if (!lastBidTabId) return;
   let r;
   try {
     await ensureContentScript(lastBidTabId);
-    r = await ask(lastBidTabId, { type: 'ENSURE_MODEL', want: model.trim() });
+    r = await ask(lastBidTabId, { type: 'ENSURE_MODEL', want: model });
   } catch (e) {
     r = { ok: false, error: String(e?.message || e) };
   }
