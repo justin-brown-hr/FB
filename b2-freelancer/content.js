@@ -321,6 +321,7 @@
     if (/writing/.test(t)) return 'Writing bid…';
     if (/sending/.test(t)) return 'Sending project…';
     // which preparing step, so a long wait can be traced
+    if (/busy with another/.test(t)) return 'Preparing… (B1 is finishing another bid)';
     if (/waiting for b1/.test(t)) return 'Preparing… (waiting for B1 to pick it up)';
     if (/picked up/.test(t)) return 'Preparing… (B1 started)';
     if (/opening/.test(t)) return 'Preparing… (opening the chat)';

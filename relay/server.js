@@ -8,6 +8,7 @@
 //   B1  GET  /api/next                (long-poll 25 s)  -> {id, text}   or 204 when nothing to do
 //   B1  POST /api/jobs/:id/status     {status}
 //   B1  POST /api/jobs/:id/result     {bid} | {error}
+//   B2  POST /api/jobs/:id/cancel     (B2 stopped waiting; a queued job is dropped)
 //   any GET  /api/health                                -> {ok, b1Online, b1LastSeenSec, queued}
 // state: queued -> working -> done | error
 
@@ -19,7 +20,8 @@ const path = require('path');
 const PORT = Number(process.env.PORT) || 8787;
 const HOST = process.env.HOST || '0.0.0.0';
 const WAIT_MS = 25000;            // long-poll length
-const PICKUP_TIMEOUT_MS = 90000;  // B1 must pick a job up within this
+const PICKUP_TIMEOUT_MS = Number(process.env.PICKUP_MS) || 90000;  // B1 counts as offline after this long without contact (and not busy)
+const QUEUE_TIMEOUT_MS = 15 * 60000; // a job may wait this long behind other jobs
 const WORK_TIMEOUT_MS = 10 * 60000;
 const KEEP_MS = 30 * 60000;
 
@@ -30,6 +32,7 @@ if (!TOKEN) {
   else { TOKEN = crypto.randomBytes(24).toString('hex'); fs.writeFileSync(f, TOKEN + '\n', { mode: 0o600 }); }
 }
 
+const BUSY_STATUS = 'Waiting for B1 (busy with another bid)…';
 const jobs = new Map();     // id -> job
 const queue = [];           // ids waiting for B1
 const jobWaiters = new Map(); // id -> Set(fn)
@@ -64,7 +67,15 @@ function nextJob() {
 setInterval(() => {
   const t = now();
   for (const j of jobs.values()) {
-    if (j.state === 'queued' && t - j.created > PICKUP_TIMEOUT_MS) fail(j, 'B1 did not pick up the job. Is Chrome with B1 running on the VPS, with the pairing code saved in the B1 popup?');
+    if (j.state === 'queued') {
+      // B1 handles one bid at a time: while it is busy, queued jobs wait (B1 doesn't poll then).
+      const busy = [...jobs.values()].some((x) => x.state === 'working');
+      const silent = t - Math.max(j.created, b1LastSeen) > PICKUP_TIMEOUT_MS;
+      if (!busy && silent) fail(j, 'B1 did not pick up the job. Is Chrome with B1 running on the VPS, with the pairing code saved in the B1 popup?');
+      else if (t - j.created > QUEUE_TIMEOUT_MS) fail(j, 'The job waited too long behind other bids.');
+      else if (busy && j.status !== BUSY_STATUS) { j.status = BUSY_STATUS; touch(j); }
+      else if (!busy && j.status === BUSY_STATUS) { j.status = 'Waiting for B1 on the VPS…'; touch(j); }
+    }
     if (j.state === 'working' && t - j.picked > WORK_TIMEOUT_MS) fail(j, 'B1 took too long to answer.');
     if (t - j.updated > KEEP_MS) jobs.delete(j.id);
   }
@@ -113,7 +124,8 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && p === '/api/jobs') {
       const { text } = await readBody(req);
       if (!text || typeof text !== 'string') return send(res, 400, { error: 'text required' });
-      const j = { id: crypto.randomBytes(16).toString('hex'), text, state: 'queued', status: 'Waiting for B1 on the VPS…', bid: null, error: null, version: 1, created: now(), updated: now() };
+      const busyNow = [...jobs.values()].some((x) => x.state === 'working');
+      const j = { id: crypto.randomBytes(16).toString('hex'), text, state: 'queued', status: busyNow ? BUSY_STATUS : 'Waiting for B1 on the VPS…', bid: null, error: null, version: 1, created: now(), updated: now() };
       jobs.set(j.id, j);
       queue.push(j.id);
       const w = [...workerWaiters][0];
@@ -152,6 +164,13 @@ const server = http.createServer(async (req, res) => {
       workerWaiters.add(fn);
       req.on('close', () => { if (!done) { done = true; clearTimeout(t); workerWaiters.delete(fn); } });
       return;
+    }
+
+    if (req.method === 'POST' && (m = p.match(/^\/api\/jobs\/([\w-]+)\/cancel$/))) {
+      const j = jobs.get(m[1]);
+      if (j && j.state === 'queued') fail(j, 'Canceled.');   // never handed to B1
+      else if (j && j.state === 'working') j.canceled = true; // B1 is already writing it; the result is just not used
+      return send(res, 200, { ok: true });
     }
 
     if (req.method === 'POST' && (m = p.match(/^\/api\/jobs\/([\w-]+)\/(status|result)$/))) {

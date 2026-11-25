@@ -40,8 +40,12 @@ async function relayJson(relay, path, opts) {
 
 // Returns the message handler for this page connection.
 function remoteSession(pagePort, relay) {
-  let alive = true;
-  pagePort.onDisconnect.addListener(() => { alive = false; });
+  let alive = true, jobId = null, finished = false;
+  pagePort.onDisconnect.addListener(() => {
+    alive = false;
+    // nobody waits for this bid any more (page reloaded / closed): drop it so B1 doesn't spend time on it
+    if (jobId && !finished) relayFetch(relay, `/api/jobs/${jobId}/cancel`, { method: 'POST', body: '{}' }).catch(() => {});
+  });
   const post = (m) => { if (alive) { try { pagePort.postMessage(m); } catch (_) {} } };
 
   return async (msg) => {
@@ -60,14 +64,16 @@ function remoteSession(pagePort, relay) {
     if (msg?.type !== 'GENERATE') return;
     try {
       const { id } = await relayJson(relay, '/api/jobs', { method: 'POST', body: JSON.stringify({ text: msg.text }) });
+      jobId = id;
+      if (!alive) { relayFetch(relay, `/api/jobs/${id}/cancel`, { method: 'POST', body: '{}' }).catch(() => {}); return; }
       let since = 0;
       while (alive) {
         let j;
         try { j = await relayJson(relay, `/api/jobs/${id}?since=${since}`); }
         catch (e) { if (/Cannot reach/.test(e.message)) { await sleep(3000); continue; } throw e; }
         since = j.version;
-        if (j.state === 'done') return post({ type: 'RESULT', bid: j.bid });
-        if (j.state === 'error') return post({ type: 'ERROR', error: j.error });
+        if (j.state === 'done') { finished = true; return post({ type: 'RESULT', bid: j.bid }); }
+        if (j.state === 'error') { finished = true; return post({ type: 'ERROR', error: j.error }); }
         if (j.status) post({ type: 'STATUS', text: j.status });
       }
     } catch (e) {
